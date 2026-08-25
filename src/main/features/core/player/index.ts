@@ -30,8 +30,12 @@ const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mp
 
 // Observability-only second IPC client. Never routes commands; node-mpv keeps command duty.
 let audioStateService: AudioStateService | null = null;
+// Bumped on every attach/stop so an in-flight attach from a previous mpv generation
+// cannot overwrite the service of a newer one.
+let audioStateGeneration = 0;
 
 const stopAudioStateService = () => {
+    audioStateGeneration += 1;
     audioStateService?.dispose();
     audioStateService = null;
 };
@@ -39,6 +43,7 @@ const stopAudioStateService = () => {
 // Best-effort: observability failure must never affect playback.
 const attachAudioStateService = async () => {
     stopAudioStateService();
+    const generation = audioStateGeneration;
     try {
         const connection = await MpvIpcConnection.connect(socketPath);
         const service = new AudioStateService(connection, {
@@ -47,11 +52,17 @@ const attachAudioStateService = async () => {
             },
         });
         await service.start();
+        if (generation !== audioStateGeneration) {
+            service.dispose();
+            return;
+        }
         audioStateService = service;
         log.debug('mpv audio-state observability attached');
     } catch (error) {
         log.warn('Failed to attach mpv audio-state observability', error);
-        stopAudioStateService();
+        if (generation === audioStateGeneration) {
+            stopAudioStateService();
+        }
     }
 };
 

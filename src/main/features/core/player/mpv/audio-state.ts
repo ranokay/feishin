@@ -334,6 +334,8 @@ export class AudioStateService {
         }
         this.stopped = true;
         this.pushEvent({ detail: null, type: 'connection-lost' });
+        // Dead values must not stay queryable: reset to a clean unavailable snapshot.
+        Object.assign(this.state, createObservedAudioState());
         if (this.broadcastTimer) {
             clearTimeout(this.broadcastTimer);
             this.broadcastTimer = null;
@@ -434,7 +436,12 @@ function readParams(value: unknown): DecodedParams | null {
         return null;
     }
     return {
-        channels: typeof value['channels'] === 'number' ? value['channels'] : null,
+        channels:
+            typeof value['channel-count'] === 'number'
+                ? value['channel-count']
+                : typeof value['channels'] === 'number'
+                  ? value['channels']
+                  : null,
         format: typeof value['format'] === 'string' ? value['format'] : null,
         samplerate: typeof value['samplerate'] === 'number' ? value['samplerate'] : null,
     };

@@ -187,6 +187,19 @@ describe('applyPropertyValue', () => {
         expect(state.cacheIdle).toBe(false);
         expect(state.cacheEofReaching).toBe(false);
     });
+
+    it('reads the numeric channel count from the channel-count field', () => {
+        const state = createObservedAudioState();
+
+        applyPropertyValue(state, 'audio-params', {
+            'channel-count': 2,
+            channels: 'stereo',
+            format: 'float',
+            samplerate: 96000,
+        });
+
+        expect(state.decodedParams).toEqual({ channels: 2, format: 'float', samplerate: 96000 });
+    });
 });
 
 describe('deriveSnapshot', () => {
@@ -414,7 +427,7 @@ describe('AudioStateService', () => {
         service.dispose();
     });
 
-    it('records connection loss and stops broadcasting after the socket closes', async () => {
+    it('records connection loss, clears stale values, and stops broadcasting', async () => {
         const connection = createStubConnection();
         const closeHandlers: Array<() => void> = [];
         connection.onClose = (handler) => {
@@ -425,17 +438,28 @@ describe('AudioStateService', () => {
         const service = new AudioStateService(connection, { broadcast, intervalMs: 10 });
 
         await service.start();
+        connection.emit('property-change', { data: 33, event: 'property-change', name: 'volume' });
+        connection.emit('property-change', {
+            data: 'coreaudio',
+            event: 'property-change',
+            name: 'current-ao',
+        });
+        await vi.advanceTimersByTimeAsync(20);
         for (const fireClose of closeHandlers) {
             fireClose();
         }
 
         const events = service.getEvents();
         expect(events[events.length - 1].type).toBe('connection-lost');
-        expect(broadcast).toHaveBeenCalledTimes(1);
+        expect(broadcast).toHaveBeenCalledTimes(2);
+
+        const finalSnapshot = broadcast.mock.calls[1][0] as { aoDriver: unknown; volume: unknown };
+        expect(finalSnapshot.aoDriver).toBeNull();
+        expect(finalSnapshot.volume).toBeNull();
 
         connection.emit('property-change', { data: 11, event: 'property-change', name: 'volume' });
         await vi.advanceTimersByTimeAsync(50);
-        expect(broadcast).toHaveBeenCalledTimes(1);
+        expect(broadcast).toHaveBeenCalledTimes(2);
     });
 
     it('continues observing when individual observe calls fail', async () => {

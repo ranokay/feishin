@@ -8,6 +8,8 @@ import process from 'process';
 import { getMainWindow, sendToastToRenderer } from '../../../index';
 import log from '../../../logger';
 import { store } from '../settings';
+import { AudioStateService } from './mpv/audio-state';
+import { MpvIpcConnection } from './mpv/ipc-client';
 
 import { isMacOS, isWindows } from '/@/main/env';
 import { PlayerData } from '/@/shared/types/domain-types';
@@ -25,6 +27,44 @@ declare module 'node-mpv';
 let mpvInstance: MpvAPI | null = null;
 let currentPlayerData: null | PlayerData = null;
 const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mpv-${pid}.sock`;
+
+// Observability-only second IPC client. Never routes commands; node-mpv keeps command duty.
+let audioStateService: AudioStateService | null = null;
+// Bumped on every attach/stop so an in-flight attach from a previous mpv generation
+// cannot overwrite the service of a newer one.
+let audioStateGeneration = 0;
+
+const stopAudioStateService = () => {
+    audioStateGeneration += 1;
+    audioStateService?.dispose();
+    audioStateService = null;
+};
+
+// Best-effort: observability failure must never affect playback.
+const attachAudioStateService = async () => {
+    stopAudioStateService();
+    const generation = audioStateGeneration;
+    try {
+        const connection = await MpvIpcConnection.connect(socketPath);
+        const service = new AudioStateService(connection, {
+            broadcast: (snapshot) => {
+                getMainWindow()?.webContents.send('renderer-audio-state-changed', snapshot);
+            },
+        });
+        await service.start();
+        if (generation !== audioStateGeneration) {
+            service.dispose();
+            return;
+        }
+        audioStateService = service;
+        log.debug('mpv audio-state observability attached');
+    } catch (error) {
+        log.warn('Failed to attach mpv audio-state observability', error);
+        if (generation === audioStateGeneration) {
+            stopAudioStateService();
+        }
+    }
+};
 
 // While quitting/restarting mpv, playlist-pos goes to -1 and node-mpv emits stopped/paused/
 // resumed. Those look identical to a real track end and must not reach the renderer — otherwise
@@ -343,6 +383,7 @@ ipcMain.handle(
             mpvInstance = null;
 
             mpvInstance = await createMpv(data);
+            void attachAudioStateService();
             mpvLog({ action: 'Restarted mpv', toast: 'success' });
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
@@ -361,6 +402,7 @@ ipcMain.handle(
                 level: 'debug',
             });
             mpvInstance = await createMpv(data);
+            void attachAudioStateService();
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
             mpvLog({ action: 'Failed to initialize mpv, falling back to web player' }, err);
@@ -379,6 +421,7 @@ ipcMain.on('player-quit', async () => {
     } catch (err: any | NodeMpvError) {
         mpvLog({ action: 'Failed to quit mpv' }, err);
     } finally {
+        stopAudioStateService();
         mpvInstance = null;
     }
 });
@@ -598,6 +641,16 @@ ipcMain.handle('player-metadata', async (): Promise<null | PlayerData> => {
     return currentPlayerData;
 });
 
+// Latest derived audio snapshot from the observability client (null when mpv is not running)
+ipcMain.handle('player-audio-snapshot', async () => {
+    return audioStateService?.getSnapshot() ?? null;
+});
+
+// Bounded audio-engine event log (device/exclusive/rate/filter occurrences)
+ipcMain.handle('player-audio-event-log', async () => {
+    return audioStateService?.getEvents() ?? [];
+});
+
 // Returns the stream metadata from mpv (for radio streams)
 ipcMain.handle(
     'player-stream-metadata',
@@ -743,6 +796,8 @@ const cleanupMpv = async (force = false) => {
     if (mpvState === MpvState.DONE && !force) {
         return;
     }
+
+    stopAudioStateService();
 
     const instance = getMpvInstance();
     if (instance) {

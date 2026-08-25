@@ -15,6 +15,8 @@ export interface IntegrityObservation {
     routeEvidenceLevel: ConfidenceLevel;
     serverRoute: 'direct-stream' | 'transcoded' | 'unknown' | 'unverified';
     serverRouteEvidenceLevel: ConfidenceLevel;
+    /** Sample-altering operations outside the af chain: softvol gain, ReplayGain, speed. */
+    softwareProcessing?: SoftwareProcessingOp[];
 }
 
 export type IntegrityStatus =
@@ -32,6 +34,11 @@ export interface IntegrityVerdict {
     detail: string[];
     missingEvidence: string[];
     status: IntegrityStatus;
+}
+
+export interface SoftwareProcessingOp {
+    detail: string;
+    kind: string;
 }
 
 export function evaluateIntegrity(observation: IntegrityObservation): IntegrityVerdict {
@@ -84,6 +91,13 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
     return { detail, missingEvidence, status: 'bit-perfect-verified' };
 }
 
+export function isExclusiveRoute(route: string): boolean {
+    if (route === 'alsa-hw') {
+        return true;
+    }
+    return route.endsWith('-exclusive') || (EXCLUSIVE_DRIVERS as readonly string[]).includes(route);
+}
+
 function collectPendingConfirmation(observation: IntegrityObservation): string[] {
     const pending: string[] = [];
     const criticalLevels: Array<[string, ConfidenceLevel]> = [
@@ -101,6 +115,10 @@ function collectPendingConfirmation(observation: IntegrityObservation): string[]
 
 function collectProcessing(observation: IntegrityObservation, detail: string[]): string[] {
     const processing: string[] = [];
+    for (const op of observation.softwareProcessing ?? []) {
+        processing.push(op.kind);
+        detail.push(op.detail);
+    }
     if (observation.activeUserFilters.length > 0) {
         processing.push('filters');
         detail.push(`active filters: ${observation.activeUserFilters.join(', ')}`);
@@ -143,13 +161,6 @@ function detectResampling(observation: IntegrityObservation, detail: string[]): 
         return declaredRate;
     }
     return null;
-}
-
-function isExclusiveRoute(route: string): boolean {
-    if (route === 'alsa-hw') {
-        return true;
-    }
-    return route.endsWith('-exclusive') || (EXCLUSIVE_DRIVERS as readonly string[]).includes(route);
 }
 
 function sourceIsDsd(observation: IntegrityObservation): boolean {

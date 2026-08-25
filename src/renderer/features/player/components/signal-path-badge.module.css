@@ -1,0 +1,58 @@
+/* Evidence dots: tier color mirrors the verdict LED semantics. */
+.dot {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+
+    &[data-level='confirmed'] {
+        background: #22c55e;
+    }
+
+    &[data-level='requested'] {
+        background: #3b82f6;
+    }
+
+    &[data-level='inferred'] {
+        background: #f59e0b;
+    }
+
+    &[data-level='unknown'] {
+        background: var(--theme-colors-dark-4);
+    }
+}
+
+/* Verdict accent colors (LED taxonomy: green verified / blue eligible /
+   amber processed / red degraded / grey unknown). */
+.verdict-verified {
+    background: #22c55e;
+}
+
+.verdict-eligible {
+    background: #3b82f6;
+}
+
+.verdict-shared {
+    background: var(--theme-colors-dark-4);
+}
+
+.verdict-unknown {
+    background: var(--theme-colors-dark-5);
+}
+
+.verdict-processed {
+    background: #f59e0b;
+}
+
+.verdict-resampled {
+    background: #fb923c;
+}
+
+.verdict-lossy {
+    background: #f97316;
+}
+
+.verdict-transcoded {
+    background: #ef4444;
+}

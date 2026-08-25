@@ -35,6 +35,7 @@ export class MpvIpcConnection {
         return this.socket !== null && !this.disposed && this.socket.writable;
     }
     private buffer = '';
+    private closeHandled = false;
     private closeHandlers = new Set<() => void>();
     private disposed = false;
     private eventHandlers = new Map<string, Set<MpvEventHandler>>();
@@ -133,7 +134,9 @@ export class MpvIpcConnection {
         socket.setEncoding('utf8');
         socket.on('data', (chunk: string) => this.consumeChunk(chunk));
         socket.on('close', () => this.handleClose());
-        socket.on('error', () => this.handleClose());
+        socket.on('error', () => {
+            socket.destroy();
+        });
     }
 
     private consumeChunk(chunk: string): void {
@@ -158,6 +161,10 @@ export class MpvIpcConnection {
     }
 
     private handleClose(): void {
+        if (this.closeHandled) {
+            return;
+        }
+        this.closeHandled = true;
         for (const [, pending] of this.pending.entries()) {
             clearTimeout(pending.timer);
             pending.reject(new Error('mpv IPC connection closed'));

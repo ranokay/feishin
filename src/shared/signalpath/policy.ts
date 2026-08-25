@@ -4,6 +4,12 @@ export type Platform = 'darwin' | 'linux' | 'win32';
 
 export type PlaybackPolicy = (typeof PLAYBACK_POLICIES)[number];
 
+export function normalizePlaybackPolicy(value: unknown): PlaybackPolicy {
+    return PLAYBACK_POLICIES.includes(value as PlaybackPolicy)
+        ? (value as PlaybackPolicy)
+        : 'standard';
+}
+
 const PLATFORM_AO_PIN: Partial<Record<Platform, string>> = {
     darwin: 'coreaudio',
     win32: 'wasapi',

@@ -1,3 +1,5 @@
+import type { PlaybackPolicy } from '/@/shared/signalpath';
+
 import isElectron from 'is-electron';
 import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -332,8 +334,39 @@ export const MpvSettings = memo(() => {
         },
     ];
 
+    const policyOptions: SettingOption[] = [
+        {
+            control: (
+                <Select
+                    data={[
+                        {
+                            label: t('setting.playbackPolicy', { context: 'optionStandard' }),
+                            value: 'standard',
+                        },
+                        {
+                            label: t('setting.playbackPolicy', { context: 'optionExclusive' }),
+                            value: 'exclusive',
+                        },
+                        {
+                            label: t('setting.playbackPolicy', { context: 'optionBitPerfect' }),
+                            value: 'bit-perfect',
+                        },
+                    ]}
+                    defaultValue={settings.playbackPolicy}
+                    onChange={(e) =>
+                        setSettings({ playback: { playbackPolicy: e as PlaybackPolicy } })
+                    }
+                />
+            ),
+            description: t('setting.playbackPolicy', { context: 'description' }),
+            note: t('setting.playbackPolicy', { context: 'enforcementNote' }),
+            title: t('setting.playbackPolicy'),
+        },
+    ];
+
     return (
         <>
+            <SettingsSection options={policyOptions} />
             <SettingsSection options={options} />
             <SettingsSection options={generalOptions} />
             <SettingsSection options={replayGainOptions} />

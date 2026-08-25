@@ -28,6 +28,7 @@ import { mergeOverridingColumns } from '/@/renderer/store/utils';
 import { FontValueSchema } from '/@/renderer/types/fonts';
 import { randomString } from '/@/renderer/utils';
 import { sanitizeCss } from '/@/renderer/utils/sanitize';
+import { normalizePlaybackPolicy, PLAYBACK_POLICIES } from '/@/shared/signalpath';
 import { AppTheme } from '/@/shared/themes/app-theme-types';
 import { LibraryItem, LyricSource, SavedCollection } from '/@/shared/types/domain-types';
 import {
@@ -709,6 +710,7 @@ const PlaybackSettingsSchema = z.object({
     mpvAudioDeviceId: z.string().nullable().optional(),
     mpvExtraParameters: z.array(z.string()),
     mpvProperties: MpvSettingsSchema,
+    playbackPolicy: z.enum([...PLAYBACK_POLICIES]),
     preservePitch: z.boolean(),
     scrobble: ScrobbleSettingsSchema,
     transcode: TranscodingConfigSchema,
@@ -2097,6 +2099,7 @@ const initialState: SettingsState = {
             replayGainMode: 'no',
             replayGainPreampDB: 0,
         },
+        playbackPolicy: 'standard',
         preservePitch: true,
         scrobble: {
             enabled: true,
@@ -2901,10 +2904,18 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
+                if (version < 34) {
+                    if (state.playback) {
+                        state.playback.playbackPolicy = normalizePlaybackPolicy(
+                            state.playback.playbackPolicy,
+                        );
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 33,
+            version: 34,
         },
     ),
 );

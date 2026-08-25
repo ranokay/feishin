@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MpvEventHandler } from '../src/main/features/core/player/mpv/ipc-client';
+import type { StreamHeaderProbe } from '../src/shared/signalpath';
 
 import {
     applyPropertyValue,
@@ -52,6 +53,7 @@ describe('observed audio property set', () => {
             'mute',
             'playlist-pos',
             'speed',
+            'track-list',
             'volume',
         ]);
     });
@@ -199,6 +201,33 @@ describe('applyPropertyValue', () => {
         });
 
         expect(state.decodedParams).toEqual({ channels: 2, format: 'float', samplerate: 96000 });
+    });
+
+    it('extracts demuxer source facts from the selected audio track-list entry', () => {
+        const state = createObservedAudioState();
+
+        applyPropertyValue(state, 'track-list', [
+            { id: 0, type: 'video' },
+            {
+                codec: 'flac',
+                'demux-channel-count': 2,
+                'demux-samplerate': 44100,
+                id: 1,
+                selected: true,
+                type: 'audio',
+            },
+        ]);
+
+        expect(state.demuxer).toEqual({ channels: 2, codec: 'flac', samplerate: 44100 });
+    });
+
+    it('clears stale demuxer facts when the track list has no audio entries', () => {
+        const state = createObservedAudioState();
+        state.demuxer = { channels: 2, codec: 'flac', samplerate: 44100 };
+
+        applyPropertyValue(state, 'track-list', []);
+
+        expect(state.demuxer).toBeNull();
     });
 });
 
@@ -474,6 +503,230 @@ describe('AudioStateService', () => {
         await service.start();
 
         expect(connection.observe).toHaveBeenCalledTimes(OBSERVED_AUDIO_PROPERTIES.length);
+        service.dispose();
+    });
+});
+
+describe('AudioStateService server-route verification', () => {
+    const FLAC_DECLARATION = {
+        bitDepth: 16,
+        channels: 2,
+        container: 'flac',
+        sampleRate: 44100,
+        sizeBytes: 30_000_000,
+    };
+    const RAW_PROBE: StreamHeaderProbe = {
+        acceptRanges: 'bytes',
+        contentLength: 30_000_000,
+        contentType: 'audio/flac',
+    };
+
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    const flushMicrotasks = async () => {
+        await vi.advanceTimersByTimeAsync(0);
+    };
+
+    it('records confirmed direct-stream evidence and an event when the probe matches', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: async () => RAW_PROBE,
+        });
+        await service.start();
+
+        service.requestServerVerification({
+            declaration: FLAC_DECLARATION,
+            url: 'https://x/stream',
+        });
+        await flushMicrotasks();
+
+        const snapshot = service.getSnapshot();
+        expect(snapshot.serverRoute).toMatchObject({
+            level: 'confirmed',
+            route: 'direct-stream',
+            verification: 'size-match',
+        });
+        expect(service.getEvents().at(-1)?.type).toBe('server-route-resolved');
+        service.dispose();
+    });
+
+    it('raises a transcode-detected event when the route contradicts the library', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: async () => ({
+                acceptRanges: null,
+                contentLength: null,
+                contentType: 'audio/mpeg',
+            }),
+        });
+        await service.start();
+
+        service.requestServerVerification({
+            declaration: FLAC_DECLARATION,
+            url: 'https://x/stream',
+        });
+        await flushMicrotasks();
+
+        const snapshot = service.getSnapshot();
+        expect(snapshot.serverRoute?.route).toBe('transcoded');
+        const lastEvent = service.getEvents().at(-1);
+        expect(lastEvent?.type).toBe('transcode-detected');
+        expect(lastEvent?.detail).toContain('audio/mpeg');
+        service.dispose();
+    });
+
+    it('finalizes immediately on headers, then re-checks when demuxer facts arrive', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: async () => RAW_PROBE,
+        });
+        await service.start();
+
+        service.requestServerVerification({
+            declaration: FLAC_DECLARATION,
+            url: 'https://x/stream',
+        });
+        await flushMicrotasks();
+        // Headers alone already produce a verdict without waiting for mpv.
+        expect(service.getSnapshot().serverRoute?.verification).toBe('size-match');
+
+        connection.emit('property-change', {
+            data: [
+                {
+                    codec: 'opus',
+                    'demux-channel-count': 2,
+                    'demux-samplerate': 44100,
+                    id: 1,
+                    type: 'audio',
+                },
+            ],
+            event: 'property-change',
+            name: 'track-list',
+        });
+
+        // The cached-transcode cross-check flips the verdict once demuxer facts land.
+        const snapshot = service.getSnapshot();
+        expect(snapshot.serverRoute?.route).toBe('transcoded');
+        const types = service.getEvents().map((event) => event.type);
+        expect(types).toContain('server-route-resolved');
+        expect(types.at(-1)).toBe('transcode-detected');
+        service.dispose();
+    });
+
+    it('does not re-evaluate twice for repeated track-list updates', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: async () => RAW_PROBE,
+        });
+        await service.start();
+
+        service.requestServerVerification({
+            declaration: FLAC_DECLARATION,
+            url: 'https://x/stream',
+        });
+        await flushMicrotasks();
+        connection.emit('property-change', {
+            data: [
+                {
+                    codec: 'flac',
+                    'demux-channel-count': 2,
+                    'demux-samplerate': 44100,
+                    id: 1,
+                    type: 'audio',
+                },
+            ],
+            event: 'property-change',
+            name: 'track-list',
+        });
+        connection.emit('property-change', {
+            data: [
+                {
+                    codec: 'flac',
+                    'demux-channel-count': 2,
+                    'demux-samplerate': 44100,
+                    id: 1,
+                    type: 'audio',
+                },
+            ],
+            event: 'property-change',
+            name: 'track-list',
+        });
+
+        const resolvedEvents = service
+            .getEvents()
+            .filter((event) => event.type === 'server-route-resolved');
+        expect(resolvedEvents).toHaveLength(1);
+        service.dispose();
+    });
+
+    it('discards a stale in-flight result once a newer request supersedes it', async () => {
+        const connection = createStubConnection();
+        let resolveFirst: ((probe: null | StreamHeaderProbe) => void) | undefined;
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: () =>
+                new Promise((resolve) => {
+                    resolveFirst = resolve;
+                }),
+        });
+        await service.start();
+
+        service.requestServerVerification({
+            declaration: FLAC_DECLARATION,
+            url: 'https://x/first',
+        });
+        service.requestServerVerification({
+            declaration: { ...FLAC_DECLARATION, container: 'mp3' },
+            url: 'https://x/second',
+        });
+        resolveFirst?.(RAW_PROBE);
+        await flushMicrotasks();
+
+        // First request is stale; its raw-flac verdict must not land. The mp3
+        // source cannot be verified by those headers either, so nothing records.
+        expect(service.getSnapshot().serverRoute ?? null).toBeNull();
+        service.dispose();
+    });
+
+    it('degrades to unverified absence when the probe fails', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: async () => null,
+        });
+        await service.start();
+
+        service.requestServerVerification({
+            declaration: FLAC_DECLARATION,
+            url: 'https://x/stream',
+        });
+        await flushMicrotasks();
+
+        expect(service.getSnapshot().serverRoute ?? null).toBeNull();
+        expect(service.getEvents()).toHaveLength(0);
+        service.dispose();
+    });
+
+    it('clears stale evidence when a new track starts and nothing else is pending', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: async () => RAW_PROBE,
+        });
+        await service.start();
+
+        service.requestServerVerification({
+            declaration: FLAC_DECLARATION,
+            url: 'https://x/stream',
+        });
+        await flushMicrotasks();
+        expect(service.getSnapshot().serverRoute?.route).toBe('direct-stream');
+
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 2 });
+        expect(service.getSnapshot().serverRoute ?? null).toBeNull();
         service.dispose();
     });
 });

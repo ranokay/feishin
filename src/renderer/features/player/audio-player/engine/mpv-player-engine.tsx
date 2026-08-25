@@ -226,6 +226,42 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
         }
     }, [preservePitch]);
 
+    // Ask the main process to verify the stream route whenever the playing track
+    // changes; results arrive via the audio snapshot broadcast.
+    useEffect(() => {
+        if (!isElectron() || !currentSong || !window.api.audioState?.verifyStream) {
+            return;
+        }
+        // Radio streams have no library declaration to verify against.
+        if (useRadioStore.getState().currentStreamUrl) {
+            return;
+        }
+
+        let cancelled = false;
+        void (async () => {
+            const url = await getSongUrl(currentSong, transcode, true);
+            if (cancelled || !url) {
+                return;
+            }
+            void window.api.audioState?.verifyStream({
+                declaration: {
+                    bitDepth: currentSong.bitDepth ?? null,
+                    channels: currentSong.channels ?? null,
+                    container: currentSong.container ?? null,
+                    sampleRate: currentSong.sampleRate ?? null,
+                    sizeBytes: currentSong.size || null,
+                },
+                url,
+            });
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+        // Only the track identity matters; song object identity churn is irrelevant.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentSong?.id, transcode]);
+
     // Handle play/pause status
     useEffect(() => {
         if (!mpvPlayer) {

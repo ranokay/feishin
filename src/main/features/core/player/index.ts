@@ -8,8 +8,9 @@ import process from 'process';
 import { getMainWindow, sendToastToRenderer } from '../../../index';
 import log from '../../../logger';
 import { store } from '../settings';
-import { AudioStateService } from './mpv/audio-state';
+import { AudioStateService, type ServerVerificationRequest } from './mpv/audio-state';
 import { MpvIpcConnection } from './mpv/ipc-client';
+import { probeStreamHeaders } from './mpv/stream-probe';
 
 import { isMacOS, isWindows } from '/@/main/env';
 import { PlayerData } from '/@/shared/types/domain-types';
@@ -50,6 +51,8 @@ const attachAudioStateService = async () => {
             broadcast: (snapshot) => {
                 getMainWindow()?.webContents.send('renderer-audio-state-changed', snapshot);
             },
+            log,
+            probeStreamHeaders,
         });
         await service.start();
         if (generation !== audioStateGeneration) {
@@ -649,6 +652,23 @@ ipcMain.handle('player-audio-snapshot', async () => {
 // Bounded audio-engine event log (device/exclusive/rate/filter occurrences)
 ipcMain.handle('player-audio-event-log', async () => {
     return audioStateService?.getEvents() ?? [];
+});
+
+// Server-route verification for the playing track (headers + demuxer cross-check)
+ipcMain.handle('player-verify-stream', (_event, request: ServerVerificationRequest) => {
+    if (
+        !request ||
+        typeof request.url !== 'string' ||
+        typeof request.declaration !== 'object' ||
+        request.declaration === null
+    ) {
+        return false;
+    }
+    if (!audioStateService) {
+        return false;
+    }
+    audioStateService.requestServerVerification(request);
+    return true;
 });
 
 // Returns the stream metadata from mpv (for radio streams)

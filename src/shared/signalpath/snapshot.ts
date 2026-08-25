@@ -1,5 +1,6 @@
 import type { Evidence } from './evidence';
 import type { DecodedParams, OutputParams } from './formats';
+import type { DemuxerObservation, ServerRouteEvidence } from './server-route';
 
 export const AUDIO_ENGINE_EVENT_TYPES = [
     'ao-transition',
@@ -15,8 +16,10 @@ export const AUDIO_ENGINE_EVENT_TYPES = [
     'physical-format',
     'playlist-advanced',
     'rate-changed',
+    'server-route-resolved',
     'track-ended',
     'track-started',
+    'transcode-detected',
 ] as const;
 
 export interface AudioEngineEvent {
@@ -36,12 +39,16 @@ export interface AudioSnapshot {
     cacheIdle: boolean | null;
     cacheUnderrun: boolean | null;
     decodedParams: DecodedParams | null;
+    /** Demuxer-reported source stream facts for the playing file (mpv track-list). */
+    demuxer?: DemuxerObservation | null;
     gaplessAudio: null | string;
     muted: boolean | null;
     outputParams: null | OutputParams;
     physicalFormat: Evidence<string> | null;
     playlistPos: null | number;
     sequence: number;
+    /** Server-route verification result; absent until the stream probe resolves. */
+    serverRoute?: null | ServerRouteEvidence;
     speed: null | number;
     timestamp: number;
     volume: null | number;

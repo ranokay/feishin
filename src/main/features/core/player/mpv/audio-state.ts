@@ -4,8 +4,17 @@ import type {
     DecodedParams,
     Evidence,
 } from '/@/shared/signalpath';
+import type {
+    DemuxerObservation,
+    ServerRouteEvidence,
+    ServerVerificationRequest,
+    SourceStreamDeclaration,
+    StreamHeaderProbe,
+} from '/@/shared/signalpath';
 
 import type { MpvEventHandler } from './ipc-client';
+
+import { evaluateServerRoute } from '/@/shared/signalpath';
 
 export type PendingAudioEngineEvent = Omit<AudioEngineEvent, 'id' | 'time'>;
 
@@ -20,6 +29,7 @@ export const OBSERVED_AUDIO_PROPERTIES = [
     'mute',
     'playlist-pos',
     'speed',
+    'track-list',
     'volume',
 ] as const;
 
@@ -31,10 +41,16 @@ export interface AudioStateConnection {
     onEvent(eventName: string, handler: MpvEventHandler): () => void;
 }
 
+export type { ServerVerificationRequest };
+
 export interface AudioStateServiceOptions {
     broadcast?: (snapshot: AudioSnapshot) => void;
     eventLimit?: number;
     intervalMs?: number;
+    /** Process logger injection; the module itself stays import-safe outside electron. */
+    log?: { debug: (message: string) => void; warn: (message: string, error?: unknown) => void };
+    /** Injectable stream-header probe; verification stays off when absent. */
+    probeStreamHeaders?: (url: string) => Promise<null | StreamHeaderProbe>;
 }
 
 export interface ObservedAudioState {
@@ -45,12 +61,14 @@ export interface ObservedAudioState {
     cacheIdle: boolean | null;
     cacheUnderrun: boolean | null;
     decodedParams: DecodedParams | null;
+    demuxer: DemuxerObservation | null;
     gaplessAudio: null | string;
     muted: boolean | null;
     outputParams: DecodedParams | null;
     physicalFormat: Evidence<string> | null;
     playlistPos: null | number;
     rawFilters: null | string;
+    serverRoute: null | ServerRouteEvidence;
     speed: null | number;
     volume: null | number;
 }
@@ -144,6 +162,9 @@ export function applyPropertyValue(
         case 'speed':
             state.speed = typeof value === 'number' ? value : null;
             break;
+        case 'track-list':
+            state.demuxer = readDemuxerObservation(value);
+            break;
         case 'volume':
             state.volume = typeof value === 'number' ? value : null;
             break;
@@ -163,12 +184,14 @@ export function createObservedAudioState(): ObservedAudioState {
         cacheIdle: null,
         cacheUnderrun: null,
         decodedParams: null,
+        demuxer: null,
         gaplessAudio: null,
         muted: null,
         outputParams: null,
         physicalFormat: null,
         playlistPos: null,
         rawFilters: null,
+        serverRoute: null,
         speed: null,
         volume: null,
     };
@@ -183,12 +206,14 @@ export function deriveSnapshot(state: ObservedAudioState, sequence: number): Aud
         cacheIdle: state.cacheIdle,
         cacheUnderrun: state.cacheUnderrun,
         decodedParams: state.decodedParams,
+        demuxer: state.demuxer,
         gaplessAudio: state.gaplessAudio,
         muted: state.muted,
         outputParams: state.outputParams,
         physicalFormat: state.physicalFormat,
         playlistPos: state.playlistPos,
         sequence,
+        serverRoute: state.serverRoute,
         speed: state.speed,
         timestamp: Date.now(),
         volume: state.volume,
@@ -224,6 +249,18 @@ export function parseAoLogEvent(prefix: string, text: string): null | PendingAud
 const DEFAULT_EVENT_LIMIT = 500;
 const DEFAULT_INTERVAL_MS = 100;
 
+/**
+ * Inputs of the most recent verification request. Kept around so demuxer facts
+ * landing after the header probe trigger one re-evaluation (the evaluator is
+ * pure; the cached-transcode cross-check needs both sides).
+ */
+interface LastServerVerification {
+    declaration: SourceStreamDeclaration;
+    demuxerApplied: boolean;
+    generation: number;
+    headers: null | StreamHeaderProbe;
+}
+
 export class AudioStateService {
     private broadcastTimer: NodeJS.Timeout | null = null;
     private readonly connection: AudioStateConnection;
@@ -232,16 +269,27 @@ export class AudioStateService {
     private readonly events: AudioEngineEvent[] = [];
     private readonly intervalMs: number;
     private lastSequence = 0;
+    private lastVerification: LastServerVerification | null = null;
+    private readonly log: {
+        debug: (message: string) => void;
+        warn: (message: string, error?: unknown) => void;
+    };
     private nextEventId = 1;
     private readonly onBroadcast: (snapshot: AudioSnapshot) => void;
+    private readonly probeStreamHeaders:
+        | ((url: string) => Promise<null | StreamHeaderProbe>)
+        | null;
     private readonly state = createObservedAudioState();
     private stopped = false;
+    private verificationGeneration = 0;
 
     constructor(connection: AudioStateConnection, options: AudioStateServiceOptions = {}) {
         this.connection = connection;
         this.onBroadcast = options.broadcast ?? (() => {});
         this.eventLimit = options.eventLimit ?? DEFAULT_EVENT_LIMIT;
         this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
+        this.log = options.log ?? { debug: () => {}, warn: () => {} };
+        this.probeStreamHeaders = options.probeStreamHeaders ?? null;
     }
 
     dispose(): void {
@@ -250,6 +298,7 @@ export class AudioStateService {
             clearTimeout(this.broadcastTimer);
             this.broadcastTimer = null;
         }
+        this.lastVerification = null;
         for (const dispose of this.disposers.splice(0)) {
             dispose();
         }
@@ -265,6 +314,47 @@ export class AudioStateService {
         return deriveSnapshot(this.state, this.lastSequence);
     }
 
+    /**
+     * Verifies the server route for the playing track: probes response headers
+     * and cross-checks them against the library declaration plus demuxer facts.
+     * Failures degrade to absent evidence, never to a claimed verdict.
+     */
+    requestServerVerification(request: ServerVerificationRequest): void {
+        if (this.stopped || !this.probeStreamHeaders) {
+            return;
+        }
+        const generation = ++this.verificationGeneration;
+        // Stale evidence from the previous track must not survive the new request.
+        this.state.serverRoute = null;
+        const probe = this.probeStreamHeaders;
+
+        void Promise.resolve()
+            .then(() => probe(request.url))
+            .then((headers) => {
+                if (this.stopped || generation !== this.verificationGeneration) {
+                    return;
+                }
+                if (headers === null) {
+                    // Query string is redacted: stream URLs carry credentials.
+                    this.log.debug(
+                        `Stream route probe returned no usable headers for ${request.url.split('?')[0]}`,
+                    );
+                    return;
+                }
+                this.lastVerification = {
+                    declaration: request.declaration,
+                    // Facts already on record count as incorporated by the first evaluation.
+                    demuxerApplied: this.state.demuxer !== null,
+                    generation,
+                    headers,
+                };
+                this.applyServerVerification();
+            })
+            .catch((error) => {
+                this.log.warn('Stream route verification failed', error);
+            });
+    }
+
     async start(): Promise<void> {
         this.subscribe('property-change', (payload) => {
             const name = payload['name'];
@@ -273,6 +363,16 @@ export class AudioStateService {
             }
             for (const event of applyPropertyValue(this.state, name, payload['data'])) {
                 this.record(event);
+            }
+            if (
+                name === 'track-list' &&
+                this.state.demuxer !== null &&
+                this.lastVerification !== null &&
+                !this.lastVerification.demuxerApplied
+            ) {
+                // Demuxer facts landed after the header probe: re-run the
+                // cross-check once so cached transcodes get caught.
+                this.applyServerVerification();
             }
             this.scheduleBroadcast();
         });
@@ -299,6 +399,12 @@ export class AudioStateService {
             this.record({ detail: 'device renegotiation', type: 'ao-transition' });
         });
         this.subscribe('start-file', () => {
+            // Stale route evidence must not bleed into the new track. A newer
+            // request in flight re-populates it when its probe resolves.
+            this.state.serverRoute = null;
+            if (this.lastVerification) {
+                this.lastVerification.demuxerApplied = true;
+            }
             this.record({ detail: null, type: 'track-started' });
         });
         this.subscribe('end-file', (payload) => {
@@ -323,6 +429,45 @@ export class AudioStateService {
         this.disposers.push(this.connection.onClose(() => this.handleClose()));
     }
 
+    private applyServerVerification(): void {
+        const verification = this.lastVerification;
+        if (!verification || verification.headers === null) {
+            return;
+        }
+        if (this.stopped || verification.generation !== this.verificationGeneration) {
+            return;
+        }
+        const evidence = evaluateServerRoute({
+            demuxer: this.state.demuxer,
+            headers: verification.headers,
+            source: verification.declaration,
+        });
+        verification.demuxerApplied = this.state.demuxer !== null;
+        const previous = this.state.serverRoute;
+        this.state.serverRoute = evidence;
+        if (
+            previous &&
+            previous.route === evidence.route &&
+            previous.verification === evidence.verification &&
+            previous.detail === evidence.detail
+        ) {
+            // Re-check concluded identically: not an occurrence worth logging.
+            return;
+        }
+        if (evidence.route === 'transcoded') {
+            this.log.warn(`Transcoded stream detected: ${evidence.detail ?? 'unknown mismatch'}`);
+            this.record({ detail: evidence.detail, type: 'transcode-detected' });
+            return;
+        }
+        this.record({
+            detail:
+                evidence.route === 'unverified'
+                    ? null
+                    : `${evidence.route} (${evidence.verification})`,
+            type: 'server-route-resolved',
+        });
+    }
+
     private emitSnapshot(): void {
         this.lastSequence += 1;
         this.onBroadcast(deriveSnapshot(this.state, this.lastSequence));
@@ -333,6 +478,7 @@ export class AudioStateService {
             return;
         }
         this.stopped = true;
+        this.lastVerification = null;
         this.pushEvent({ detail: null, type: 'connection-lost' });
         // Dead values must not stay queryable: reset to a clean unavailable snapshot.
         Object.assign(this.state, createObservedAudioState());
@@ -409,6 +555,28 @@ function formatRate(rate: null | number): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
+}
+
+function readDemuxerObservation(value: unknown): DemuxerObservation | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+    const audioTracks = value.filter(
+        (track): track is Record<string, unknown> => isRecord(track) && track['type'] === 'audio',
+    );
+    if (audioTracks.length === 0) {
+        return null;
+    }
+    const selected = audioTracks.find((track) => track['selected'] === true) ?? audioTracks[0];
+    return {
+        channels:
+            typeof selected['demux-channel-count'] === 'number'
+                ? selected['demux-channel-count']
+                : null,
+        codec: typeof selected['codec'] === 'string' ? selected['codec'] : null,
+        samplerate:
+            typeof selected['demux-samplerate'] === 'number' ? selected['demux-samplerate'] : null,
+    };
 }
 
 function readFilterNames(value: unknown): string[] {

@@ -799,6 +799,8 @@
         "signalPath_stageOutput": "Output route",
         "signalPath_stageDevice": "Device",
         "signalPath_serverUnverified": "Unverified",
+        "signalPath_serverDirect": "Direct stream (original bytes)",
+        "signalPath_serverTranscoded": "Transcoded",
         "signalPath_exclusiveRequested": "Exclusive requested (not confirmed)",
         "signalPath_dspNone": "None",
         "signalPath_dspGain": "Software gain",

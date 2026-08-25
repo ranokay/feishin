@@ -140,6 +140,59 @@ describe('buildSignalPathModel', () => {
         expect(model.integrity.missingEvidence.length > 0).toBe(true);
     });
 
+    it('reaches bit-perfect-verified when a confirmed size-match completes the chain', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                serverRoute: {
+                    detail: null,
+                    level: 'confirmed',
+                    route: 'direct-stream',
+                    verification: 'size-match',
+                },
+            }),
+        });
+
+        expect(model.server.value).toBe('direct-stream');
+        expect(model.server.level).toBe('confirmed');
+        expect(model.integrity.status).toBe('bit-perfect-verified');
+        expect(model.integrity.missingEvidence).toEqual([]);
+    });
+
+    it('short-circuits to transcoded when the server route contradicts the library', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                serverRoute: {
+                    detail: 'stream decodes as opus but library declares .flac',
+                    level: 'confirmed',
+                    route: 'transcoded',
+                    verification: 'unverified',
+                },
+            }),
+        });
+
+        expect(model.integrity.status).toBe('transcoded');
+        expect(model.server.detail).toContain('opus');
+    });
+
+    it('caps inferred-tier route evidence at eligible pending confirmation', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                serverRoute: {
+                    detail: null,
+                    level: 'inferred',
+                    route: 'direct-stream',
+                    verification: 'header-match',
+                },
+            }),
+        });
+
+        expect(model.integrity.status).toBe('bit-perfect-eligible');
+        expect(model.integrity.missingEvidence).toContain('server-route');
+    });
+
     it('lists software gain when volume is below unity', () => {
         const model = buildSignalPathModel({
             ...baseInputs,

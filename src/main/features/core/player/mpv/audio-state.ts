@@ -1,4 +1,9 @@
-import type { AudioEngineEvent, AudioSnapshot } from '/@/shared/signalpath';
+import type {
+    AudioEngineEvent,
+    AudioSnapshot,
+    DecodedParams,
+    Evidence,
+} from '/@/shared/signalpath';
 
 import type { MpvEventHandler } from './ipc-client';
 
@@ -39,21 +44,15 @@ export interface ObservedAudioState {
     cacheEofReaching: boolean | null;
     cacheIdle: boolean | null;
     cacheUnderrun: boolean | null;
-    decodedParams: DecodedParamsLike | null;
+    decodedParams: DecodedParams | null;
     gaplessAudio: null | string;
     muted: boolean | null;
-    outputParams: DecodedParamsLike | null;
-    physicalFormat: null | { level: 'inferred'; source: 'mpv-log'; value: string };
+    outputParams: DecodedParams | null;
+    physicalFormat: Evidence<string> | null;
     playlistPos: null | number;
     rawFilters: null | string;
     speed: null | number;
     volume: null | number;
-}
-
-interface DecodedParamsLike {
-    channels: null | number;
-    format: null | string;
-    samplerate: null | number;
 }
 
 export function applyPropertyValue(
@@ -295,6 +294,8 @@ export class AudioStateService {
             this.record(parsed);
         });
         this.subscribe('audio-reconfig', () => {
+            // Renegotiation invalidates the previous device negotiation evidence.
+            this.state.physicalFormat = null;
             this.record({ detail: 'device renegotiation', type: 'ao-transition' });
         });
         this.subscribe('start-file', () => {
@@ -332,16 +333,7 @@ export class AudioStateService {
             return;
         }
         this.stopped = true;
-        this.events.push({
-            detail: null,
-            id: this.nextEventId,
-            time: Date.now(),
-            type: 'connection-lost',
-        });
-        this.nextEventId += 1;
-        if (this.events.length > this.eventLimit) {
-            this.events.splice(0, this.events.length - this.eventLimit);
-        }
+        this.pushEvent({ detail: null, type: 'connection-lost' });
         if (this.broadcastTimer) {
             clearTimeout(this.broadcastTimer);
             this.broadcastTimer = null;
@@ -349,12 +341,16 @@ export class AudioStateService {
         this.emitSnapshot();
     }
 
-    private record(event: PendingAudioEngineEvent): void {
+    private pushEvent(event: PendingAudioEngineEvent): void {
         this.events.push({ ...event, id: this.nextEventId, time: Date.now() });
         this.nextEventId += 1;
         if (this.events.length > this.eventLimit) {
             this.events.splice(0, this.events.length - this.eventLimit);
         }
+    }
+
+    private record(event: PendingAudioEngineEvent): void {
+        this.pushEvent(event);
         this.scheduleBroadcast();
     }
 
@@ -377,8 +373,8 @@ export class AudioStateService {
 
 function compareParamTransition(
     stage: 'decoded' | 'output',
-    previous: DecodedParamsLike | null,
-    next: DecodedParamsLike | null,
+    previous: DecodedParams | null,
+    next: DecodedParams | null,
 ): PendingAudioEngineEvent[] {
     if (!previous) {
         return [];
@@ -430,7 +426,7 @@ function readOptionalBoolean(value: unknown): boolean | null {
     return typeof value === 'boolean' ? value : null;
 }
 
-function readParams(value: unknown): DecodedParamsLike | null {
+function readParams(value: unknown): DecodedParams | null {
     if (!isRecord(value)) {
         return null;
     }

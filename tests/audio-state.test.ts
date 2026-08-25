@@ -396,6 +396,24 @@ describe('AudioStateService', () => {
         service.dispose();
     });
 
+    it('clears stale physical-format evidence when the AO renegotiates within a driver', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection);
+
+        await service.start();
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: 'Selected physical format: 44100 Hz float32 2ch',
+        });
+        expect(service.getSnapshot().physicalFormat).not.toBeNull();
+
+        connection.emit('audio-reconfig', { event: 'audio-reconfig' });
+
+        expect(service.getSnapshot().physicalFormat).toBeNull();
+        service.dispose();
+    });
+
     it('records connection loss and stops broadcasting after the socket closes', async () => {
         const connection = createStubConnection();
         const closeHandlers: Array<() => void> = [];

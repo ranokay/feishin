@@ -28,7 +28,7 @@ let mpvInstance: MpvAPI | null = null;
 let currentPlayerData: null | PlayerData = null;
 const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mpv-${pid}.sock`;
 
-// Observability-only second IPC client (Hi-Fi T3). Never routes commands; node-mpv keeps command duty.
+// Observability-only second IPC client. Never routes commands; node-mpv keeps command duty.
 let audioStateService: AudioStateService | null = null;
 
 const stopAudioStateService = () => {
@@ -372,7 +372,7 @@ ipcMain.handle(
             mpvInstance = null;
 
             mpvInstance = await createMpv(data);
-            await attachAudioStateService();
+            void attachAudioStateService();
             mpvLog({ action: 'Restarted mpv', toast: 'success' });
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
@@ -391,7 +391,7 @@ ipcMain.handle(
                 level: 'debug',
             });
             mpvInstance = await createMpv(data);
-            await attachAudioStateService();
+            void attachAudioStateService();
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
             mpvLog({ action: 'Failed to initialize mpv, falling back to web player' }, err);

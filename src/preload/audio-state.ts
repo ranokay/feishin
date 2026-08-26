@@ -1,4 +1,5 @@
 import type { AudioEngineEvent, AudioSnapshot } from '/@/shared/signalpath';
+import type { ServerVerificationRequest } from '/@/shared/signalpath/server-route';
 
 import { ipcRenderer } from 'electron';
 
@@ -8,6 +9,10 @@ const getSnapshot = (): Promise<AudioSnapshot | null> => {
 
 const getEvents = (): Promise<AudioEngineEvent[]> => {
     return ipcRenderer.invoke('player-audio-event-log');
+};
+
+const verifyStream = (request: ServerVerificationRequest): Promise<boolean> => {
+    return ipcRenderer.invoke('player-verify-stream', request);
 };
 
 const onSnapshotChanged = (callback: (snapshot: AudioSnapshot) => void) => {
@@ -22,6 +27,7 @@ export const audioState = {
     getEvents,
     getSnapshot,
     onSnapshotChanged,
+    verifyStream,
 };
 
 export type AudioStateApi = typeof audioState;

@@ -117,6 +117,16 @@ describe.skipIf(!mpvAvailable)('AudioStateService over real mpv playback', () =>
         expect(snapshot.activeFilters).toEqual([]);
     });
 
+    it('derives demuxer source facts from the live track-list property', async () => {
+        const snapshot = await waitForSnapshot(
+            (candidate) =>
+                candidate.demuxer?.codec !== undefined && candidate.demuxer.codec !== null,
+        );
+
+        expect(snapshot.demuxer?.samplerate).toBeGreaterThan(0);
+        expect(snapshot.demuxer?.channels).toBe(2);
+    });
+
     it('captures a rate-change transition with clean events and no stale mixes', async () => {
         snapshots = [];
         await mpv.request(['loadfile', await writeSineWav(96000), 'replace']);

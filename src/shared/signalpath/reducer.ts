@@ -196,6 +196,8 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
 
     const processing = collectProcessing(replayGainMode, snapshot, source);
 
+    const serverRoute = snapshot.serverRoute ?? null;
+
     const integrity = evaluateIntegrity({
         activeUserFilters: snapshot.activeFilters ?? [],
         declaredSource: source,
@@ -204,8 +206,8 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
         outputParams: snapshot.outputParams,
         route: snapshot.aoDriver ?? '',
         routeEvidenceLevel: snapshot.aoDriver === null ? 'unknown' : 'confirmed',
-        serverRoute: 'unverified',
-        serverRouteEvidenceLevel: 'unknown',
+        serverRoute: serverRoute?.route ?? 'unverified',
+        serverRouteEvidenceLevel: serverRoute?.level ?? 'unknown',
         softwareProcessing: processing
             .filter(
                 (entry): entry is typeof entry & { detail: string } =>
@@ -249,9 +251,14 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
                 ? 'unknown'
                 : 'confirmed',
         requestedExclusive,
-        // Server-route verification lands in a later ticket; until then this
-        // stage stays honest and unverified.
-        server: { detail: null, level: 'unknown', value: 'unverified' },
+        server: serverRoute
+            ? {
+                  detail: serverRoute.route === 'transcoded' ? serverRoute.detail : null,
+                  level: serverRoute.level,
+                  value: serverRoute.route,
+              }
+            : // No probe result for this track yet: honest unverified placeholder.
+              { detail: null, level: 'unknown', value: 'unverified' },
         source: source
             ? {
                   detail: [

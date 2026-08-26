@@ -226,6 +226,54 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
         }
     }, [preservePitch]);
 
+    // Ask the main process to verify the stream route whenever the playing track
+    // changes; results arrive via the audio snapshot broadcast.
+    useEffect(() => {
+        if (!isElectron() || !currentSong || !window.api.audioState?.verifyStream) {
+            return;
+        }
+        // Radio streams have no library declaration to verify against.
+        if (useRadioStore.getState().currentStreamUrl) {
+            return;
+        }
+
+        let cancelled = false;
+        let retryTimer: NodeJS.Timeout | null = null;
+        const attempt = (attemptsLeft: number) => {
+            void (async () => {
+                const url = await getSongUrl(currentSong, transcode, true);
+                if (cancelled || !url) {
+                    return;
+                }
+                const accepted = await window.api.audioState?.verifyStream({
+                    declaration: {
+                        bitDepth: currentSong.bitDepth ?? null,
+                        channels: currentSong.channels ?? null,
+                        container: currentSong.container ?? null,
+                        sampleRate: currentSong.sampleRate ?? null,
+                        sizeBytes: currentSong.size || null,
+                    },
+                    url,
+                });
+                // The observability service attaches asynchronously after mpv
+                // starts; an unaccepted request is retried shortly after.
+                if (!accepted && attemptsLeft > 0 && !cancelled) {
+                    retryTimer = setTimeout(() => attempt(attemptsLeft - 1), 1_500);
+                }
+            })();
+        };
+        attempt(2);
+
+        return () => {
+            cancelled = true;
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+            }
+        };
+        // Only the track identity matters; song object identity churn is irrelevant.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentSong?.id, transcode]);
+
     // Handle play/pause status
     useEffect(() => {
         if (!mpvPlayer) {

@@ -198,9 +198,15 @@ export const SignalPathBadge = () => {
                         item={{
                             ...model.server,
                             detail:
-                                model.server.value === 'unverified'
-                                    ? t('player.signalPath_serverUnverified')
-                                    : model.server.detail,
+                                model.server.value === 'transcoded'
+                                    ? [t('player.signalPath_serverTranscoded'), model.server.detail]
+                                          .filter(
+                                              (part): part is string => !!part && part.length > 0,
+                                          )
+                                          .join(': ')
+                                    : model.server.value === 'direct-stream'
+                                      ? t('player.signalPath_serverDirect')
+                                      : t('player.signalPath_serverUnverified'),
                         }}
                         label={t('player.signalPath_stageServer')}
                     />

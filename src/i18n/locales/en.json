@@ -853,6 +853,7 @@
         "signalPath_event_device_lost": "Device lost",
         "signalPath_event_device_opened": "Device opened",
         "signalPath_event_device_selected": "Device selected",
+        "signalPath_event_engine_error": "Engine error",
         "signalPath_event_exclusive_attempted": "Exclusive attempted",
         "signalPath_event_exclusive_failed": "Exclusive failed",
         "signalPath_event_filters_changed": "Filters changed",

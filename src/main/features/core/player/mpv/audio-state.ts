@@ -5,6 +5,7 @@ import type {
     Evidence,
 } from '/@/shared/signalpath';
 import type {
+    AudioEngineFailure,
     DemuxerObservation,
     ServerRouteEvidence,
     ServerVerificationRequest,
@@ -14,7 +15,13 @@ import type {
 
 import type { MpvEventHandler } from './ipc-client';
 
-import { evaluateServerRoute, redactStreamUrl } from '/@/shared/signalpath';
+import {
+    classifyAoFailure,
+    classifyEndFileError,
+    evaluateServerRoute,
+    redactStreamUrl,
+    unknownFailure,
+} from '/@/shared/signalpath';
 
 export type PendingAudioEngineEvent = Omit<AudioEngineEvent, 'id' | 'time'>;
 
@@ -49,6 +56,8 @@ export interface AudioStateServiceOptions {
     intervalMs?: number;
     /** Process logger injection; the module itself stays import-safe outside electron. */
     log?: { debug: (message: string) => void; warn: (message: string, error?: unknown) => void };
+    /** Typed engine failures (exclusive contention etc.) for immediate surfacing. */
+    onEngineError?: (failure: AudioEngineFailure) => void;
     /** Injectable stream-header probe; verification stays off when absent. */
     probeStreamHeaders?: (url: string) => Promise<null | StreamHeaderProbe>;
 }
@@ -63,6 +72,7 @@ export interface ObservedAudioState {
     decodedParams: DecodedParams | null;
     demuxer: DemuxerObservation | null;
     gaplessAudio: null | string;
+    lastError: AudioEngineFailure | null;
     muted: boolean | null;
     outputParams: DecodedParams | null;
     physicalFormat: Evidence<string> | null;
@@ -187,6 +197,7 @@ export function createObservedAudioState(): ObservedAudioState {
         decodedParams: null,
         demuxer: null,
         gaplessAudio: null,
+        lastError: null,
         muted: null,
         outputParams: null,
         physicalFormat: null,
@@ -210,6 +221,7 @@ export function deriveSnapshot(state: ObservedAudioState, sequence: number): Aud
         decodedParams: state.decodedParams,
         demuxer: state.demuxer,
         gaplessAudio: state.gaplessAudio,
+        lastError: state.lastError,
         muted: state.muted,
         outputParams: state.outputParams,
         physicalFormat: state.physicalFormat,
@@ -244,6 +256,10 @@ export function parseAoLogEvent(prefix: string, text: string): null | PendingAud
     }
     if (/physical format/i.test(detail)) {
         return { detail, type: 'physical-format' };
+    }
+    // Generic AO-init failure (rate/format/device rejections under any driver).
+    if (/failed to initialize|failed to open|could not open|device disappeared/i.test(detail)) {
+        return { detail, type: 'engine-error' };
     }
 
     return null;
@@ -281,6 +297,7 @@ export class AudioStateService {
     };
     private nextEventId = 1;
     private readonly onBroadcast: (snapshot: AudioSnapshot) => void;
+    private readonly onEngineError: ((failure: AudioEngineFailure) => void) | null;
     private readonly probeStreamHeaders:
         | ((url: string) => Promise<null | StreamHeaderProbe>)
         | null;
@@ -294,6 +311,7 @@ export class AudioStateService {
         this.eventLimit = options.eventLimit ?? DEFAULT_EVENT_LIMIT;
         this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
         this.log = options.log ?? { debug: () => {}, warn: () => {} };
+        this.onEngineError = options.onEngineError ?? null;
         this.probeStreamHeaders = options.probeStreamHeaders ?? null;
     }
 
@@ -403,6 +421,18 @@ export class AudioStateService {
                     source: 'mpv-log',
                     value: parsed.detail ?? '',
                 };
+                this.record(parsed);
+                return;
+            }
+            if (parsed.type === 'engine-error') {
+                // Typed carrier: classified then recorded once, with cause.
+                this.handleEngineFailure(this.classifyFailure(parsed.detail ?? ''));
+                return;
+            }
+            if (parsed.type === 'exclusive-failed') {
+                this.record(parsed);
+                this.handleEngineFailure(this.classifyFailure(parsed.detail ?? ''));
+                return;
             }
             this.record(parsed);
         });
@@ -412,10 +442,11 @@ export class AudioStateService {
             this.record({ detail: 'device renegotiation', type: 'ao-transition' });
         });
         this.subscribe('start-file', () => {
-            // Stale route evidence and URLs must not bleed into the new track. A
-            // newer request in flight re-populates them when its probe resolves.
+            // Stale route evidence, URLs, and errors must not bleed into the
+            // new track. A newer request in flight re-populates them.
             this.state.serverRoute = null;
             this.state.streamUrl = null;
+            this.state.lastError = null;
             if (this.lastVerification) {
                 this.lastVerification.demuxerApplied = true;
             }
@@ -424,6 +455,11 @@ export class AudioStateService {
         this.subscribe('end-file', (payload) => {
             const reason = payload['reason'];
             this.record({ detail: reason == null ? null : String(reason), type: 'track-ended' });
+            // A classified AO failure usually precedes an error end-file;
+            // only raise the generic unknown failure when nothing is recorded.
+            if (reason === 'error' && this.state.lastError === null) {
+                this.handleEngineFailure(classifyEndFileError());
+            }
         });
 
         for (const [index, propertyName] of OBSERVED_AUDIO_PROPERTIES.entries()) {
@@ -483,6 +519,10 @@ export class AudioStateService {
         });
     }
 
+    private classifyFailure(detail: string): AudioEngineFailure {
+        return classifyAoFailure(detail) ?? unknownFailure(detail);
+    }
+
     private emitSnapshot(): void {
         this.lastSequence += 1;
         this.onBroadcast(deriveSnapshot(this.state, this.lastSequence));
@@ -502,6 +542,16 @@ export class AudioStateService {
             this.broadcastTimer = null;
         }
         this.emitSnapshot();
+    }
+
+    private handleEngineFailure(failure: AudioEngineFailure): void {
+        this.state.lastError = failure;
+        this.log.warn(`Audio engine error (${failure.cause}): ${failure.explanation}`);
+        this.record({
+            detail: `${failure.cause}: ${failure.explanation}`,
+            type: 'engine-error',
+        });
+        this.onEngineError?.(failure);
     }
 
     private pushEvent(event: PendingAudioEngineEvent): void {

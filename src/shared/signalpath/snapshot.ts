@@ -1,3 +1,4 @@
+import type { AudioEngineFailure } from './engine-errors';
 import type { Evidence } from './evidence';
 import type { DecodedParams, OutputParams } from './formats';
 import type { DemuxerObservation, ServerRouteEvidence } from './server-route';
@@ -8,6 +9,7 @@ export const AUDIO_ENGINE_EVENT_TYPES = [
     'device-lost',
     'device-opened',
     'device-selected',
+    'engine-error',
     'exclusive-attempted',
     'exclusive-failed',
     'filters-changed',
@@ -42,6 +44,8 @@ export interface AudioSnapshot {
     /** Demuxer-reported source stream facts for the playing file (mpv track-list). */
     demuxer?: DemuxerObservation | null;
     gaplessAudio: null | string;
+    /** Most recent typed engine failure; cleared when the next track starts. */
+    lastError?: AudioEngineFailure | null;
     muted: boolean | null;
     outputParams: null | OutputParams;
     physicalFormat: Evidence<string> | null;

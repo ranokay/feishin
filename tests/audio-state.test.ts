@@ -729,4 +729,60 @@ describe('AudioStateService server-route verification', () => {
         expect(service.getSnapshot().serverRoute ?? null).toBeNull();
         service.dispose();
     });
+
+    it('classifies hog-mode contention into a typed error and notifies', async () => {
+        const connection = createStubConnection();
+        const onEngineError = vi.fn();
+        const service = new AudioStateService(connection, { onEngineError });
+        await service.start();
+
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio',
+            text: 'failed to set hogmode: -536870196',
+        });
+
+        const snapshot = service.getSnapshot();
+        expect(snapshot.lastError?.cause).toBe('exclusive-contention');
+        expect(snapshot.lastError?.standardWouldHelp).toBe(true);
+        const errorEvent = service.getEvents().find((event) => event.type === 'engine-error');
+        expect(errorEvent?.detail).toContain('exclusive-contention');
+        expect(onEngineError).toHaveBeenCalledWith(
+            expect.objectContaining({ cause: 'exclusive-contention' }),
+        );
+        service.dispose();
+    });
+
+    it('records an unknown-cause typed error when playback ends with an error', async () => {
+        const connection = createStubConnection();
+        const onEngineError = vi.fn();
+        const service = new AudioStateService(connection, { onEngineError });
+        await service.start();
+
+        connection.emit('end-file', { event: 'end-file', reason: 'error' });
+
+        expect(service.getSnapshot().lastError?.cause).toBe('unknown');
+        expect(onEngineError).toHaveBeenCalledTimes(1);
+
+        // A fresh track start clears the stale failure.
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 2 });
+        expect(service.getSnapshot().lastError ?? null).toBeNull();
+        service.dispose();
+    });
+
+    it('types generic AO-init failures even without exclusive keywords', async () => {
+        const connection = createStubConnection();
+        const onEngineError = vi.fn();
+        const service = new AudioStateService(connection, { onEngineError });
+        await service.start();
+
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio',
+            text: 'failed to initialize AO: sample rate 176400 not supported by device',
+        });
+
+        expect(service.getSnapshot().lastError?.cause).toBe('unsupported-rate');
+        service.dispose();
+    });
 });

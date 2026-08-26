@@ -52,6 +52,14 @@ const attachAudioStateService = async () => {
                 getMainWindow()?.webContents.send('renderer-audio-state-changed', snapshot);
             },
             log,
+            onEngineError: (failure) => {
+                sendToastToRenderer({
+                    message: failure.standardWouldHelp
+                        ? `${failure.explanation} Switching to Standard playback policy may help.`
+                        : failure.explanation,
+                    type: 'error',
+                });
+            },
             probeStreamHeaders,
         });
         await service.start();

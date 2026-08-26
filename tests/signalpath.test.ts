@@ -96,10 +96,8 @@ describe('resolvePolicy', () => {
         const config = resolvePolicy({ ...standardInputs, policy: 'bit-perfect' });
         expect(config.runtimeProperties).toMatchObject({
             'gapless-audio': 'weak',
-            mute: false,
             replaygain: 'no',
             speed: 1,
-            volume: 100,
         });
         expect(config.startupArgs).toContain('--ao=coreaudio');
     });

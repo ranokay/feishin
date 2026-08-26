@@ -115,7 +115,7 @@ function collectPendingConfirmation(observation: IntegrityObservation): string[]
     }
     // Unknown-fidelity containers (e.g. ALAC-or-AAC inside m4a) can support
     // eligibility but must never confirm a bit-perfect verdict.
-    if (observation.declaredSource.lossless === null) {
+    if (observation.declaredSource?.lossless === null) {
         pending.push('source-fidelity');
     }
     return pending;

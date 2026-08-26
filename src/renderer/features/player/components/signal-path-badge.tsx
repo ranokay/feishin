@@ -20,7 +20,7 @@ import {
     type ProcessingEntry,
     type SignalPathItem,
 } from '/@/shared/signalpath';
-import { PlayerType } from '/@/shared/types/types';
+import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
 const VERDICT_META: Record<IntegrityStatus, { className: string; key: string }> = {
     'bit-perfect-eligible': {

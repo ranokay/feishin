@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { PopoverPlayQueue } from '/@/renderer/features/now-playing/components/popover-play-queue';
 import { PlayerConfig } from '/@/renderer/features/player/components/player-config';
 import { CustomPlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
+import { SignalPathBadge } from '/@/renderer/features/player/components/signal-path-badge';
 import { SleepTimerButton } from '/@/renderer/features/player/components/sleep-timer-button';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { useAudioDevices } from '/@/renderer/features/settings/components/playback/audio-settings';
@@ -98,6 +99,7 @@ export const RightControls = () => {
                 <PlayerConfig />
                 <LyricsButton />
                 {showFavorites && <FavoriteButton />}
+                <SignalPathBadge />
                 <QueueButton />
                 <VolumeButton />
             </Group>

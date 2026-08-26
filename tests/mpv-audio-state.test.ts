@@ -70,8 +70,12 @@ afterAll(async () => {
 });
 
 describe.skipIf(!mpvAvailable)('AudioStateService over real mpv playback', () => {
-    it('observes initial properties on a live idle instance', () => {
-        const snapshot = service.getSnapshot();
+    it('observes initial properties on a live idle instance', async () => {
+        // Initial observations arrive asynchronously over IPC; on a loaded CI
+        // runner they can land after the first broadcasts, so wait for them.
+        const snapshot = await waitForSnapshot(
+            (candidate) => candidate.volume !== null && candidate.speed !== null,
+        );
 
         expect(snapshot.volume).toBe(100);
         expect(snapshot.speed).toBe(1);

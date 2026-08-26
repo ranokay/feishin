@@ -1,7 +1,10 @@
+import { openModal } from '@mantine/modals';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import styles from './signal-path-badge.module.css';
+import { EvidenceDot, formatServerStage, StageRow } from './signal-path-rows';
+import { StreamInspectorModal } from './stream-inspector-modal';
 
 import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
 import { usePlayerSong, usePlayerStore } from '/@/renderer/store/player.store';
@@ -18,7 +21,6 @@ import {
     type IntegrityStatus,
     isExclusiveRoute,
     type ProcessingEntry,
-    type SignalPathItem,
 } from '/@/shared/signalpath';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
@@ -71,38 +73,6 @@ const DSP_KEY: Record<ProcessingEntry['kind'], string> = {
     resample: 'dspResample',
     tempo: 'dspTempo',
 };
-
-const EVIDENCE_KEY: Record<ConfidenceLevel, string> = {
-    confirmed: 'evidenceConfirmed',
-    inferred: 'evidenceInferred',
-    requested: 'evidenceRequested',
-    unknown: 'evidenceUnknown',
-};
-
-const EvidenceDot = ({ level }: { level: ConfidenceLevel }) => {
-    const { t } = useTranslation();
-
-    return (
-        <span
-            aria-label={t(`player.signalPath_${EVIDENCE_KEY[level]}`)}
-            className={styles.dot}
-            data-level={level}
-            title={t(`player.signalPath_${EVIDENCE_KEY[level]}`)}
-        />
-    );
-};
-
-const StageRow = ({ item, label }: { item: SignalPathItem; label: string }) => (
-    <Group align="flex-start" gap="xs" justify="space-between" wrap="nowrap">
-        <Text c="dim" size="xs" style={{ flexShrink: 0 }}>
-            {label}
-        </Text>
-        <Group gap="xs" wrap="nowrap">
-            <Text size="xs">{item.detail ?? item.value ?? '-'}</Text>
-            <EvidenceDot level={item.level} />
-        </Group>
-    </Group>
-);
 
 const ProcessingRow = ({
     entries,
@@ -176,6 +146,14 @@ export const SignalPathBadge = () => {
         model.requestedExclusive &&
         !(model.output.value !== null && isExclusiveRoute(model.output.value));
 
+    const openInspector = () => {
+        openModal({
+            children: <StreamInspectorModal />,
+            size: 'lg',
+            title: t('player.signalPath_inspectorTitle'),
+        });
+    };
+
     return (
         <Popover position="top-end" withArrow>
             <Popover.Target>
@@ -197,16 +175,7 @@ export const SignalPathBadge = () => {
                     <StageRow
                         item={{
                             ...model.server,
-                            detail:
-                                model.server.value === 'transcoded'
-                                    ? [t('player.signalPath_serverTranscoded'), model.server.detail]
-                                          .filter(
-                                              (part): part is string => !!part && part.length > 0,
-                                          )
-                                          .join(': ')
-                                    : model.server.value === 'direct-stream'
-                                      ? t('player.signalPath_serverDirect')
-                                      : t('player.signalPath_serverUnverified'),
+                            detail: formatServerStage(snapshot?.serverRoute, t),
                         }}
                         label={t('player.signalPath_stageServer')}
                     />
@@ -225,6 +194,9 @@ export const SignalPathBadge = () => {
                         label={t('player.signalPath_stageOutput')}
                     />
                     <StageRow item={model.device} label={t('player.signalPath_stageDevice')} />
+                    <Button fullWidth onClick={openInspector} size="compact-xs" variant="light">
+                        {t('player.signalPath_openInspector')}
+                    </Button>
                 </Stack>
             </Popover.Dropdown>
         </Popover>

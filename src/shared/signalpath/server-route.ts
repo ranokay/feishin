@@ -182,6 +182,51 @@ function codecMatchesContainer(codec: string, container: string): boolean {
     return (CONTAINERS_BY_CODEC[codec] ?? [codec]).includes(normalized);
 }
 
+// Query params whose values are safe (and useful) in diagnostics output.
+const SAFE_QUERY_PARAMS = new Set([
+    'audioCodec',
+    'c',
+    'container',
+    'format',
+    'getTranscodeInfo',
+    'id',
+    'maxBitRate',
+    'mediaType',
+    'offset',
+    'skipAutoTranscode',
+    'static',
+    'transcode',
+    'transcodingContainer',
+    'v',
+]);
+
+/**
+ * Strips credential-bearing query values from a stream URL while keeping the
+ * shape that matters for diagnosis: origin, path, and safe param names/values.
+ */
+export function redactStreamUrl(url: string): string {
+    const queryStart = url.indexOf('?');
+    if (queryStart === -1) {
+        return url;
+    }
+    const base = url.slice(0, queryStart);
+    const query = url.slice(queryStart + 1);
+    const redacted = query.split('&').map((pair) => {
+        const eq = pair.indexOf('=');
+        if (eq === -1) {
+            return pair;
+        }
+        const key = pair.slice(0, eq);
+        return SAFE_QUERY_PARAMS.has(key) ? pair : `${key}=<redacted>`;
+    });
+    return `${base}?${redacted.join('&')}`;
+}
+
+/** Redacts every http(s) URL found inside free-form text (event details etc). */
+export function redactUrlsInText(text: string): string {
+    return text.replace(/https?:\/\/[^\s;)]+/g, (match) => redactStreamUrl(match));
+}
+
 function mimeSubtype(contentType: null | string): null | string {
     if (!contentType) {
         return null;

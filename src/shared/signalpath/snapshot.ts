@@ -50,6 +50,8 @@ export interface AudioSnapshot {
     /** Server-route verification result; absent until the stream probe resolves. */
     serverRoute?: null | ServerRouteEvidence;
     speed: null | number;
+    /** Redacted URL of the playing stream (query secrets scrubbed main-side). */
+    streamUrl?: null | string;
     timestamp: number;
     volume: null | number;
 }

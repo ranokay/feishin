@@ -1,3 +1,5 @@
+export * from './diagnostics';
+export * from './event-log';
 export * from './evidence';
 export * from './formats';
 export * from './integrity';

@@ -14,7 +14,7 @@ import type {
 
 import type { MpvEventHandler } from './ipc-client';
 
-import { evaluateServerRoute } from '/@/shared/signalpath';
+import { evaluateServerRoute, redactStreamUrl } from '/@/shared/signalpath';
 
 export type PendingAudioEngineEvent = Omit<AudioEngineEvent, 'id' | 'time'>;
 
@@ -70,6 +70,7 @@ export interface ObservedAudioState {
     rawFilters: null | string;
     serverRoute: null | ServerRouteEvidence;
     speed: null | number;
+    streamUrl: null | string;
     volume: null | number;
 }
 
@@ -193,6 +194,7 @@ export function createObservedAudioState(): ObservedAudioState {
         rawFilters: null,
         serverRoute: null,
         speed: null,
+        streamUrl: null,
         volume: null,
     };
 }
@@ -215,6 +217,7 @@ export function deriveSnapshot(state: ObservedAudioState, sequence: number): Aud
         sequence,
         serverRoute: state.serverRoute,
         speed: state.speed,
+        streamUrl: state.streamUrl,
         timestamp: Date.now(),
         volume: state.volume,
     };
@@ -329,6 +332,9 @@ export class AudioStateService {
         // the previous track's codec/rate with this track's headers.
         this.state.serverRoute = null;
         this.state.demuxer = null;
+        // Kept for the Stream Inspector, redacted: stream URLs carry credentials.
+        this.state.streamUrl = redactStreamUrl(request.url);
+        this.scheduleBroadcast();
         const probe = this.probeStreamHeaders;
 
         void Promise.resolve()
@@ -402,9 +408,10 @@ export class AudioStateService {
             this.record({ detail: 'device renegotiation', type: 'ao-transition' });
         });
         this.subscribe('start-file', () => {
-            // Stale route evidence must not bleed into the new track. A newer
-            // request in flight re-populates it when its probe resolves.
+            // Stale route evidence and URLs must not bleed into the new track. A
+            // newer request in flight re-populates them when its probe resolves.
             this.state.serverRoute = null;
+            this.state.streamUrl = null;
             if (this.lastVerification) {
                 this.lastVerification.demuxerApplied = true;
             }

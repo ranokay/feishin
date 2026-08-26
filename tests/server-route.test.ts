@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateServerRoute } from '../src/shared/signalpath/server-route';
+import { evaluateServerRoute, redactStreamUrl } from '../src/shared/signalpath/server-route';
 
 const FLAC_SOURCE = {
     bitDepth: 16,
@@ -180,5 +180,25 @@ describe('evaluateServerRoute', () => {
         // Size still matches exactly; ranges alone must not flip to transcoded.
         expect(result.route).toBe('direct-stream');
         expect(result.verification).toBe('size-match');
+    });
+});
+
+describe('redactStreamUrl', () => {
+    it('scrubs query credentials while keeping safe diagnostic shape', () => {
+        expect(
+            redactStreamUrl('https://navi.example/rest/stream.view?id=abc&v=1.13.0&t=tok&s=salt'),
+        ).toBe('https://navi.example/rest/stream.view?id=abc&v=1.13.0&t=<redacted>&s=<redacted>');
+    });
+
+    it('strips http userinfo from the authority', () => {
+        expect(redactStreamUrl('https://user:password@host/rest/stream?id=abc&maxBitRate=0')).toBe(
+            'https://<redacted>@host/rest/stream?id=abc&maxBitRate=0',
+        );
+    });
+
+    it('redacts userinfo even without a query string', () => {
+        expect(redactStreamUrl('https://user:password@host/rest/stream')).toBe(
+            'https://<redacted>@host/rest/stream',
+        );
     });
 });

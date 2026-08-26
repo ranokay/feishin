@@ -1,0 +1,38 @@
+/* Severity accents for the engine event log (mirrors the verdict taxonomy). */
+.dot {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 0.5rem;
+    height: 0.5rem;
+    background: var(--theme-colors-dark-4);
+    border-radius: 50%;
+}
+
+.severity-info {
+    background: #3b82f6;
+}
+
+.severity-warning {
+    background: #f59e0b;
+}
+
+.severity-error {
+    background: #ef4444;
+}
+
+.severity-debug {
+    background: var(--theme-colors-dark-4);
+}
+
+.report {
+    font-size: 0.6875rem;
+    text-align: left;
+    white-space: pre-wrap;
+    direction: ltr;
+    unicode-bidi: plaintext;
+}
+
+.event-row {
+    padding-bottom: 2px;
+    border-bottom: 1px solid var(--theme-colors-dark-6);
+}

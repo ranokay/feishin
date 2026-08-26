@@ -1,4 +1,5 @@
 export * from './diagnostics';
+export * from './engine-errors';
 export * from './event-log';
 export * from './evidence';
 export * from './formats';

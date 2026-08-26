@@ -38,7 +38,38 @@ export interface PolicyInputs {
     speed: number;
 }
 
+export interface PolicyStartupConfig {
+    runtimeProperties: Record<string, unknown>;
+    startupArgs: string[];
+}
+
 export type ReplayGainMode = 'album' | 'no' | 'track';
+
+/**
+ * Startup-only mpv configuration a policy demands (AO pinning, exclusive
+ * flags, strict pins). Standard returns empty so the existing arg/property
+ * set stays byte-identical.
+ */
+export function policyStartupConfig(
+    policy: PlaybackPolicy,
+    platform: Platform,
+): PolicyStartupConfig {
+    if (policy === 'standard') {
+        return { runtimeProperties: {}, startupArgs: [] };
+    }
+    const aoPin = PLATFORM_AO_PIN[platform];
+    const startupArgs = [...(aoPin ? [`--ao=${aoPin}`] : []), '--audio-exclusive=yes'];
+    const runtimeProperties: Record<string, unknown> = { 'audio-exclusive': 'yes' };
+    if (policy === 'bit-perfect') {
+        startupArgs.push('--gapless-audio=weak');
+        runtimeProperties['gapless-audio'] = 'weak';
+        runtimeProperties.mute = false;
+        runtimeProperties.replaygain = 'no';
+        runtimeProperties.speed = 1;
+        runtimeProperties.volume = 100;
+    }
+    return { runtimeProperties, startupArgs };
+}
 
 export function resolvePolicy(inputs: PolicyInputs): EffectivePlaybackConfig {
     switch (inputs.policy) {
@@ -78,28 +109,21 @@ function collectStrictConflicts(inputs: PolicyInputs): PolicyConflict[] {
 
 function resolveBitPerfect(inputs: PolicyInputs): EffectivePlaybackConfig {
     const conflicts = collectStrictConflicts(inputs);
-    const runtimeProperties: Record<string, unknown> = {
-        'audio-exclusive': 'yes',
-        'gapless-audio': 'weak',
-        mute: false,
-        replaygain: 'no',
-        speed: 1,
-        volume: 100,
+    const base = policyStartupConfig('bit-perfect', inputs.platform);
+    return {
+        conflicts,
+        requestedExclusive: true,
+        runtimeProperties: base.runtimeProperties,
+        startupArgs: base.startupArgs,
     };
-    const startupArgs = ['--audio-exclusive=yes', '--gapless-audio=weak'];
-    const aoPin = PLATFORM_AO_PIN[inputs.platform];
-    if (aoPin) {
-        startupArgs.unshift(`--ao=${aoPin}`);
-    }
-    return { conflicts, requestedExclusive: true, runtimeProperties, startupArgs };
 }
 
 function resolveExclusive(inputs: PolicyInputs): EffectivePlaybackConfig {
-    const aoPin = PLATFORM_AO_PIN[inputs.platform];
+    const base = policyStartupConfig('exclusive', inputs.platform);
     return {
         conflicts: [],
         requestedExclusive: true,
-        runtimeProperties: { 'audio-exclusive': 'yes' },
-        startupArgs: [...(aoPin ? [`--ao=${aoPin}`] : []), '--audio-exclusive=yes'],
+        runtimeProperties: base.runtimeProperties,
+        startupArgs: base.startupArgs,
     };
 }

@@ -16,6 +16,7 @@ import {
     usePlayerStore,
     useSettingsStore,
 } from '/@/renderer/store';
+import { type Platform, policyStartupConfig } from '/@/shared/signalpath';
 import { PlayerStatus } from '/@/shared/types/types';
 
 export interface MpvPlayerEngineHandle extends AudioPlayer {}
@@ -62,6 +63,7 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
     const { mpvAudioDeviceId, transcode } = usePlaybackSettings();
     const mpvExtraParameters = useSettingsStore((store) => store.playback.mpvExtraParameters);
     const mpvProperties = useSettingsStore((store) => store.playback.mpvProperties);
+    const playbackPolicy = useSettingsStore((store) => store.playback.playbackPolicy);
     const [reloadTrigger, setReloadTrigger] = useState(0);
 
     useEffect(() => {
@@ -110,15 +112,31 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             isInitializedRef.current = false;
             hasPopulatedQueueRef.current = false;
 
-            // Initialize mpv with fresh state
+            const platform: Platform = window.api?.utils?.isMacOS?.()
+                ? 'darwin'
+                : window.api?.utils?.isWindows?.()
+                  ? 'win32'
+                  : 'linux';
+
+            // Merge the policy-derived startup config (AO pinning, exclusive
+            // flags, strict pins) at the existing initialization choke point.
+            // Standard resolves to empty, leaving today's arg set untouched.
+            const { runtimeProperties, startupArgs } = policyStartupConfig(
+                playbackPolicy,
+                platform,
+            );
+
+            // Initialize mpv with fresh state. Policy-derived runtime pins go
+            // last so strict values (unity gain, unit speed) win at startup.
             const properties: Record<string, any> = {
                 ...getMpvProperties(mpvProperties),
                 'audio-pitch-correction': preservePitch === false ? 'no' : 'yes',
                 speed: speed,
                 volume: volume,
+                ...runtimeProperties,
             };
 
-            const extraParameters: string[] = [...mpvExtraParameters];
+            const extraParameters: string[] = [...mpvExtraParameters, ...startupArgs];
 
             const audioDevice = mpvAudioDeviceId?.trim() || 'auto';
             extraParameters.push(`--audio-device=${audioDevice}`);
@@ -175,8 +193,9 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
         // reinitializing the entire player. Transcode changes are handled by queue
         // update callbacks in usePlayerEvents.
         // reloadTrigger is included to allow manual reload via MPV_RELOAD event.
+        // playbackPolicy re-initializes mpv so policy-derived args take effect.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mpvExtraParameters, mpvProperties, mpvAudioDeviceId, reloadTrigger]);
+    }, [mpvExtraParameters, mpvProperties, mpvAudioDeviceId, reloadTrigger, playbackPolicy]);
 
     // Update volume
     useEffect(() => {

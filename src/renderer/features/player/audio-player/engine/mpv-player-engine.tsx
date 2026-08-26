@@ -238,25 +238,37 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
         }
 
         let cancelled = false;
-        void (async () => {
-            const url = await getSongUrl(currentSong, transcode, true);
-            if (cancelled || !url) {
-                return;
-            }
-            void window.api.audioState?.verifyStream({
-                declaration: {
-                    bitDepth: currentSong.bitDepth ?? null,
-                    channels: currentSong.channels ?? null,
-                    container: currentSong.container ?? null,
-                    sampleRate: currentSong.sampleRate ?? null,
-                    sizeBytes: currentSong.size || null,
-                },
-                url,
-            });
-        })();
+        let retryTimer: NodeJS.Timeout | null = null;
+        const attempt = (attemptsLeft: number) => {
+            void (async () => {
+                const url = await getSongUrl(currentSong, transcode, true);
+                if (cancelled || !url) {
+                    return;
+                }
+                const accepted = await window.api.audioState?.verifyStream({
+                    declaration: {
+                        bitDepth: currentSong.bitDepth ?? null,
+                        channels: currentSong.channels ?? null,
+                        container: currentSong.container ?? null,
+                        sampleRate: currentSong.sampleRate ?? null,
+                        sizeBytes: currentSong.size || null,
+                    },
+                    url,
+                });
+                // The observability service attaches asynchronously after mpv
+                // starts; an unaccepted request is retried shortly after.
+                if (!accepted && attemptsLeft > 0 && !cancelled) {
+                    retryTimer = setTimeout(() => attempt(attemptsLeft - 1), 1_500);
+                }
+            })();
+        };
+        attempt(2);
 
         return () => {
             cancelled = true;
+            if (retryTimer) {
+                clearTimeout(retryTimer);
+            }
         };
         // Only the track identity matters; song object identity churn is irrelevant.
         // eslint-disable-next-line react-hooks/exhaustive-deps

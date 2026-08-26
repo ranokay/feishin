@@ -324,8 +324,11 @@ export class AudioStateService {
             return;
         }
         const generation = ++this.verificationGeneration;
-        // Stale evidence from the previous track must not survive the new request.
+        // Stale evidence from the previous track must not survive the new
+        // request - demuxer facts included, otherwise a fast probe would pair
+        // the previous track's codec/rate with this track's headers.
         this.state.serverRoute = null;
+        this.state.demuxer = null;
         const probe = this.probeStreamHeaders;
 
         void Promise.resolve()

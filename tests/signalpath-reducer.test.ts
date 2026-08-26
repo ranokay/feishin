@@ -82,6 +82,23 @@ describe('declareSource', () => {
             declareSource({ bitDepth: null, channels: null, container: null, sampleRate: null }),
         ).toBeNull();
     });
+
+    it('never labels unknown containers as definitively lossy', () => {
+        // Ambiguous containers (ALAC-in-m4a) and mime-style subtypes must not
+        // produce a false lossy-source verdict.
+        expect(
+            declareSource({ bitDepth: null, channels: 2, container: 'm4a', sampleRate: 44100 })
+                ?.lossless,
+        ).toBeNull();
+        expect(
+            declareSource({
+                bitDepth: 16,
+                channels: 2,
+                container: 'x-flac',
+                sampleRate: 44100,
+            })?.lossless,
+        ).toBe(true);
+    });
 });
 
 describe('buildSignalPathModel', () => {

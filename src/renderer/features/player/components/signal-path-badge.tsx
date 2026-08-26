@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import styles from './signal-path-badge.module.css';
 
 import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
-import { usePlayerSong } from '/@/renderer/store/player.store';
+import { usePlayerSong, usePlayerStore } from '/@/renderer/store/player.store';
 import { useSettingsStore } from '/@/renderer/store/settings.store';
 import { Button } from '/@/shared/components/button/button';
 import { Group } from '/@/shared/components/group/group';
@@ -146,6 +146,7 @@ export const SignalPathBadge = () => {
     const policy = useSettingsStore((state) => state.playback.playbackPolicy);
     const replayGainMode = useSettingsStore((state) => state.playback.mpvProperties.replayGainMode);
     const song = usePlayerSong();
+    const playerStatus = usePlayerStore((state) => state.player.status);
     const snapshot = useAudioSnapshot();
 
     const source = useMemo(
@@ -164,8 +165,9 @@ export const SignalPathBadge = () => {
         [policy, replayGainMode, snapshot, source],
     );
 
-    // Only the local mpv engine has a signal path to describe.
-    if (playbackType !== PlayerType.LOCAL || !song) {
+    // Only the local mpv engine has a signal path to describe, and a stopped
+    // player would keep showing the previous track's verdict indefinitely.
+    if (playbackType !== PlayerType.LOCAL || !song || playerStatus === PlayerStatus.STOPPED) {
         return null;
     }
 

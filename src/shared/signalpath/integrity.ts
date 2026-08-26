@@ -3,7 +3,10 @@ import type { DecodedParams, OutputParams, SourceDeclaration } from './formats';
 
 import { isPrecisionPreserving } from './formats';
 
-export const EXCLUSIVE_DRIVERS = ['coreaudio_exclusive', 'wasapi', 'pipewire'] as const;
+// Drivers whose NAME alone proves an exclusive route. Bare 'wasapi'/'pipewire'
+// are excluded on purpose: mpv reports those names for ordinary shared playback
+// too, so claiming exclusivity from them would overclaim (anti-overclaim rule 2).
+export const EXCLUSIVE_DRIVERS = ['coreaudio_exclusive'] as const;
 
 export interface IntegrityObservation {
     activeUserFilters: string[];
@@ -109,6 +112,11 @@ function collectPendingConfirmation(observation: IntegrityObservation): string[]
         if (level !== 'confirmed') {
             pending.push(name);
         }
+    }
+    // Unknown-fidelity containers (e.g. ALAC-or-AAC inside m4a) can support
+    // eligibility but must never confirm a bit-perfect verdict.
+    if (observation.declaredSource.lossless === null) {
+        pending.push('source-fidelity');
     }
     return pending;
 }

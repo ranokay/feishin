@@ -53,6 +53,10 @@ export interface SignalPathModel {
 
 const LOSSLESS_CONTAINERS = new Set(['aiff', 'alac', 'ape', 'flac', 'shn', 'wav', 'wv']);
 const DSD_CONTAINERS = new Set(['dff', 'dsf']);
+// Containers that are definitively lossy; anything else unknown stays unknown
+// instead of producing a false lossy-source verdict (e.g. ALAC inside m4a,
+// which is deliberately treated as unknown fidelity and gated at eligible).
+const KNOWN_LOSSY_CONTAINERS = new Set(['aac', 'mp3', 'ogg', 'opus', 'wma']);
 
 export function declareSource(song: {
     bitDepth: null | number;
@@ -63,12 +67,17 @@ export function declareSource(song: {
     if (!song.container) {
         return null;
     }
-    const codec = song.container.trim().toLowerCase();
+    const codec = normalizeContainer(song.container);
+    const lossless = LOSSLESS_CONTAINERS.has(codec)
+        ? true
+        : KNOWN_LOSSY_CONTAINERS.has(codec)
+          ? false
+          : null;
     return {
         bitDepth: song.bitDepth ?? null,
         channelCount: song.channels ?? null,
         codec,
-        lossless: LOSSLESS_CONTAINERS.has(codec),
+        lossless,
         pcmOrDsd: DSD_CONTAINERS.has(codec) ? 'dsd' : 'pcm',
         samplingRate: song.sampleRate ?? null,
     };
@@ -156,6 +165,12 @@ function collectProcessing(
     }
 
     return processing;
+}
+
+function normalizeContainer(container: string): string {
+    const lowered = container.trim().toLowerCase();
+    // Servers emit mime subtypes like x-flac / x-wav for ordinary containers.
+    return lowered.startsWith('x-') ? lowered.slice(2) : lowered;
 }
 
 const UNKNOWN_ITEM: SignalPathItem = { detail: null, level: 'unknown', value: null };

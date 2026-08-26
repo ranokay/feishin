@@ -63,10 +63,11 @@ export function policyStartupConfig(
     if (policy === 'bit-perfect') {
         startupArgs.push('--gapless-audio=weak');
         runtimeProperties['gapless-audio'] = 'weak';
-        runtimeProperties.mute = false;
         runtimeProperties.replaygain = 'no';
         runtimeProperties.speed = 1;
-        runtimeProperties.volume = 100;
+        // Gain/mute pins deliberately wait for strict control handling
+        // (T13): pinning them at init would silently unmute and blast audio
+        // at full volume for users switching from a quiet or muted session.
     }
     return { runtimeProperties, startupArgs };
 }

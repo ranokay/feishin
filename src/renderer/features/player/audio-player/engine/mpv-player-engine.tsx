@@ -168,7 +168,11 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
                     ? await getSongUrl(playerData.nextSong, transcode, true)
                     : undefined;
 
-                if (currentSongUrl && nextSongUrl && !hasPopulatedQueueRef.current && mpvPlayer) {
+                // Restore the current track even without a successor: on a
+                // single-item or final queue (e.g. after a policy change
+                // re-initialized mpv), requiring a next URL would leave mpv
+                // empty while the player store still holds the current song.
+                if (currentSongUrl && !hasPopulatedQueueRef.current && mpvPlayer) {
                     const shouldPause =
                         usePlayerStore.getState().player.status !== PlayerStatus.PLAYING;
                     mpvPlayer.setQueue(currentSongUrl, nextSongUrl, shouldPause);

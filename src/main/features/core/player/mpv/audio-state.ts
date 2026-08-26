@@ -455,7 +455,9 @@ export class AudioStateService {
         this.subscribe('end-file', (payload) => {
             const reason = payload['reason'];
             this.record({ detail: reason == null ? null : String(reason), type: 'track-ended' });
-            if (reason === 'error') {
+            // A classified AO failure usually precedes an error end-file;
+            // only raise the generic unknown failure when nothing is recorded.
+            if (reason === 'error' && this.state.lastError === null) {
                 this.handleEngineFailure(classifyEndFileError());
             }
         });

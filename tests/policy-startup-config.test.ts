@@ -38,10 +38,8 @@ describe('policyStartupConfig', () => {
         expect(config.runtimeProperties).toMatchObject({
             'audio-exclusive': 'yes',
             'gapless-audio': 'weak',
-            mute: false,
             replaygain: 'no',
             speed: 1,
-            volume: 100,
         });
     });
 });

@@ -207,9 +207,9 @@ const SAFE_QUERY_PARAMS = new Set([
 export function redactStreamUrl(url: string): string {
     const queryStart = url.indexOf('?');
     if (queryStart === -1) {
-        return url;
+        return redactUserInfo(url);
     }
-    const base = url.slice(0, queryStart);
+    const base = redactUserInfo(url.slice(0, queryStart));
     const query = url.slice(queryStart + 1);
     const redacted = query.split('&').map((pair) => {
         const eq = pair.indexOf('=');
@@ -233,4 +233,10 @@ function mimeSubtype(contentType: null | string): null | string {
     }
     const subtype = contentType.split(';')[0].trim().split('/')[1];
     return subtype ? subtype.toLowerCase() : null;
+}
+
+// HTTP userinfo (https://user:password@host) must never survive into
+// diagnostics output or snapshot broadcasts.
+function redactUserInfo(base: string): string {
+    return base.replace(/^([a-z][a-z0-9+.-]*:\/\/)([^@/\s]+)@/i, '$1<redacted>@');
 }

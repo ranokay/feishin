@@ -262,6 +262,8 @@ interface LastServerVerification {
     demuxerApplied: boolean;
     generation: number;
     headers: null | StreamHeaderProbe;
+    /** Redacted URL of the request; restored when start-file raced the probe. */
+    streamUrl: string;
 }
 
 export class AudioStateService {
@@ -333,7 +335,8 @@ export class AudioStateService {
         this.state.serverRoute = null;
         this.state.demuxer = null;
         // Kept for the Stream Inspector, redacted: stream URLs carry credentials.
-        this.state.streamUrl = redactStreamUrl(request.url);
+        const streamUrl = redactStreamUrl(request.url);
+        this.state.streamUrl = streamUrl;
         this.scheduleBroadcast();
         const probe = this.probeStreamHeaders;
 
@@ -356,6 +359,7 @@ export class AudioStateService {
                     demuxerApplied: this.state.demuxer !== null,
                     generation,
                     headers,
+                    streamUrl,
                 };
                 this.applyServerVerification();
             })
@@ -453,6 +457,7 @@ export class AudioStateService {
             source: verification.declaration,
         });
         verification.demuxerApplied = this.state.demuxer !== null;
+        this.state.streamUrl = verification.streamUrl;
         const previous = this.state.serverRoute;
         this.state.serverRoute = evidence;
         if (

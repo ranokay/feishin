@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { EvidenceDot, formatServerStage, StageRow } from './signal-path-rows';
 import styles from './stream-inspector-modal.module.css';
 
-import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
+import { useAudioSnapshot, useAudioStateStore } from '/@/renderer/store/audio-state.store';
 import { usePlayerSong } from '/@/renderer/store/player.store';
 import { useSettingsStore } from '/@/renderer/store/settings.store';
 import { logger } from '/@/renderer/utils/logger';
@@ -87,12 +87,14 @@ export const StreamInspectorModal = () => {
     const replayGainMode = useSettingsStore((state) => state.playback.mpvProperties.replayGainMode);
     const song = usePlayerSong();
     const snapshot = useAudioSnapshot();
+    // useAudioSnapshot strips volatile fields, so subscribe to the raw
+    // broadcast sequence separately to refresh the query-only event log.
+    const broadcastSequence = useAudioStateStore((state) => state.snapshot?.sequence);
 
     const [events, setEvents] = useState<AudioEngineEvent[]>([]);
     const [categoryFilter, setCategoryFilter] = useState<'all' | AudioEventCategory>('all');
     const [severityFilter, setSeverityFilter] = useState<'all' | AudioEventSeverity>('all');
 
-    // The event log is query-only; refresh it whenever the engine broadcasts.
     useEffect(() => {
         if (!window.api?.audioState?.getEvents) {
             return;
@@ -101,7 +103,7 @@ export const StreamInspectorModal = () => {
             .getEvents()
             .then(setEvents)
             .catch((error) => logger.warn('Failed to load audio engine event log', { error }));
-    }, [snapshot?.sequence]);
+    }, [broadcastSequence]);
 
     const source = useMemo(
         () =>

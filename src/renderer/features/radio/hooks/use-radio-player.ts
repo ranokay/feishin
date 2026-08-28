@@ -171,7 +171,7 @@ export const useRadioAudioInstance = () => {
         }
 
         if (currentStreamUrl) {
-            mpvPlayer.setQueue(currentStreamUrl, undefined, !isPlaying);
+            mpvPlayer.setQueue({ kind: 'radio', url: currentStreamUrl }, undefined, !isPlaying);
         } else {
             mpvPlayer.pause();
         }

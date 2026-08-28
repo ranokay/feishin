@@ -5,7 +5,7 @@ import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
-import { getSongUrl } from '/@/renderer/features/player/audio-player/hooks/use-stream-url';
+import { getMpvStream } from '/@/renderer/features/player/audio-player/hooks/use-stream-url';
 import { AudioPlayer, PlayerOnProgressProps } from '/@/renderer/features/player/audio-player/types';
 import { useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { getMpvProperties } from '/@/renderer/features/settings/components/playback/mpv-properties';
@@ -161,21 +161,21 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
 
             if (!radioState.currentStreamUrl) {
                 const playerData = usePlayerStore.getState().getPlayerData();
-                const currentSongUrl = playerData.currentSong
-                    ? await getSongUrl(playerData.currentSong, transcode, true)
+                const currentStream = playerData.currentSong
+                    ? await getMpvStream(playerData.currentSong, transcode)
                     : undefined;
-                const nextSongUrl = playerData.nextSong
-                    ? await getSongUrl(playerData.nextSong, transcode, true)
+                const nextStream = playerData.nextSong
+                    ? await getMpvStream(playerData.nextSong, transcode)
                     : undefined;
 
                 // Restore the current track even without a successor: on a
                 // single-item or final queue (e.g. after a policy change
                 // re-initialized mpv), requiring a next URL would leave mpv
                 // empty while the player store still holds the current song.
-                if (currentSongUrl && !hasPopulatedQueueRef.current && mpvPlayer) {
+                if (currentStream && !hasPopulatedQueueRef.current && mpvPlayer) {
                     const shouldPause =
                         usePlayerStore.getState().player.status !== PlayerStatus.PLAYING;
-                    mpvPlayer.setQueue(currentSongUrl, nextSongUrl, shouldPause);
+                    mpvPlayer.setQueue(currentStream, nextStream, shouldPause);
                     hasPopulatedQueueRef.current = true;
                 }
             }
@@ -248,54 +248,6 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             mpvPlayer.setProperties({ 'audio-pitch-correction': 'yes' });
         }
     }, [preservePitch]);
-
-    // Ask the main process to verify the stream route whenever the playing track
-    // changes; results arrive via the audio snapshot broadcast.
-    useEffect(() => {
-        if (!isElectron() || !currentSong || !window.api.audioState?.verifyStream) {
-            return;
-        }
-        // Radio streams have no library declaration to verify against.
-        if (useRadioStore.getState().currentStreamUrl) {
-            return;
-        }
-
-        let cancelled = false;
-        let retryTimer: NodeJS.Timeout | null = null;
-        const attempt = (attemptsLeft: number) => {
-            void (async () => {
-                const url = await getSongUrl(currentSong, transcode, true);
-                if (cancelled || !url) {
-                    return;
-                }
-                const accepted = await window.api.audioState?.verifyStream({
-                    declaration: {
-                        bitDepth: currentSong.bitDepth ?? null,
-                        channels: currentSong.channels ?? null,
-                        container: currentSong.container ?? null,
-                        sampleRate: currentSong.sampleRate ?? null,
-                        sizeBytes: currentSong.size || null,
-                    },
-                    url,
-                });
-                // The observability service attaches asynchronously after mpv
-                // starts; an unaccepted request is retried shortly after.
-                if (!accepted && attemptsLeft > 0 && !cancelled) {
-                    retryTimer = setTimeout(() => attempt(attemptsLeft - 1), 1_500);
-                }
-            })();
-        };
-        attempt(2);
-
-        return () => {
-            cancelled = true;
-            if (retryTimer) {
-                clearTimeout(retryTimer);
-            }
-        };
-        // Only the track identity matters; song object identity churn is irrelevant.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentSong?.id, transcode]);
 
     // Handle play/pause status
     useEffect(() => {
@@ -404,8 +356,8 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
                     return;
                 }
 
-                const nextSongUrl = song ? await getSongUrl(song, transcode, true) : undefined;
-                mpvPlayer?.setQueueNext(nextSongUrl);
+                const nextStream = song ? await getMpvStream(song, transcode) : undefined;
+                mpvPlayer?.setQueueNext(nextStream);
             },
             onPlayerPlay: () => {
                 replaceMpvQueue(transcode);
@@ -468,10 +420,10 @@ async function handleMpvAutoNext(transcode: {
     format?: string | undefined;
 }) {
     const playerData = usePlayerStore.getState().getPlayerData();
-    const nextSongUrl = playerData.nextSong
-        ? await getSongUrl(playerData.nextSong, transcode, true)
+    const nextStream = playerData.nextSong
+        ? await getMpvStream(playerData.nextSong, transcode)
         : undefined;
-    mpvPlayer?.autoNext(nextSongUrl);
+    mpvPlayer?.autoNext(nextStream);
 }
 
 async function replaceMpvQueue(transcode: {
@@ -487,11 +439,11 @@ async function replaceMpvQueue(transcode: {
     }
 
     const playerData = usePlayerStore.getState().getPlayerData();
-    const currentSongUrl = playerData.currentSong
-        ? await getSongUrl(playerData.currentSong, transcode, true)
+    const currentStream = playerData.currentSong
+        ? await getMpvStream(playerData.currentSong, transcode)
         : undefined;
-    const nextSongUrl = playerData.nextSong
-        ? await getSongUrl(playerData.nextSong, transcode, true)
+    const nextStream = playerData.nextSong
+        ? await getMpvStream(playerData.nextSong, transcode)
         : undefined;
-    mpvPlayer?.setQueue(currentSongUrl, nextSongUrl, false);
+    mpvPlayer?.setQueue(currentStream, nextStream, false);
 }

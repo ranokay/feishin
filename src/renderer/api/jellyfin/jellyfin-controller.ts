@@ -6,6 +6,7 @@ import orderBy from 'lodash/orderBy';
 import { z } from 'zod';
 
 import { createAuthHeader, jfApiClient } from '/@/renderer/api/jellyfin/jellyfin-api';
+import { buildJellyfinStreamUrl } from '/@/renderer/api/jellyfin/jellyfin-stream-url';
 import { useRadioStore } from '/@/renderer/features/radio/store/radio-store';
 import { getServerUrl } from '/@/renderer/utils/normalize-server-url';
 import { jfNormalize } from '/@/shared/api/jellyfin/jellyfin-normalize';
@@ -1444,39 +1445,17 @@ export const JellyfinController: InternalControllerEndpoint = {
             query: { ...query, limit: 1, startIndex: 0 },
         }).then((result) => result!.totalRecordCount!),
     getStreamUrl: async ({ apiClientProps: { server }, query }) => {
-        const { bitrate, format, id, transcode } = query;
-        const deviceId = '';
+        const { bitrate, format, id, skipAutoTranscode, transcode } = query;
 
-        let url = `${server?.url}/Items/${id}/Download?apiKey=${server?.credential}&playSessionId=${deviceId}`;
-
-        if (transcode) {
-            // Some format appears to be required. Fall back to trusty MP3 if not specified
-            // Otherwise, ffmpeg appears to crash
-            const realFormat = format || 'mp3';
-
-            url =
-                `${server?.url}/audio` +
-                `/${id}/universal` +
-                `?userId=${server?.userId}` +
-                `&deviceId=${deviceId}` +
-                '&audioCodec=aac' +
-                `&apiKey=${server?.credential}` +
-                `&playSessionId=${deviceId}` +
-                '&container=opus,mp3,aac,m4a,m4b,flac,wav,ogg';
-
-            url += `&transcodingProtocol=http&transcodingContainer=${realFormat}`;
-            url = url.replace('audioCodec=aac', `audioCodec=${realFormat}`);
-            url = url.replace(
-                '&container=opus,mp3,aac,m4a,m4b,flac,wav,ogg',
-                `&container=${realFormat}`,
-            );
-
-            if (bitrate !== undefined) {
-                url += `&maxStreamingBitrate=${bitrate * 1000}`;
-            }
-        }
-
-        return url;
+        return buildJellyfinStreamUrl({
+            bitrate,
+            credential: server?.credential,
+            format,
+            id,
+            mode: transcode ? 'transcode' : skipAutoTranscode ? 'direct' : 'original',
+            serverUrl: server?.url,
+            userId: server?.userId,
+        });
     },
     getTagList: async (args) => {
         const { apiClientProps, query } = args;

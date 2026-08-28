@@ -12,6 +12,11 @@ export interface DemuxerObservation {
     samplerate: null | number;
 }
 
+/** Tagged queue input keeps radio streams separate from verifiable library tracks. */
+export type MpvLoadSource =
+    | (ServerVerificationRequest & { kind: 'library' })
+    | { kind: 'radio'; url: string };
+
 export interface ServerRouteEvidence {
     /** Human-readable mismatch reasons; null when no contradiction was found. */
     detail: null | string;

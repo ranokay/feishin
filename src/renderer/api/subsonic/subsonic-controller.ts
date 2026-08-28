@@ -8,6 +8,7 @@ import md5 from 'md5';
 import { z } from 'zod';
 
 import { contract, ssApiClient } from '/@/renderer/api/subsonic/subsonic-api';
+import { buildSubsonicStreamUrl } from '/@/renderer/api/subsonic/subsonic-stream-url';
 import { mapStructuredLyric } from '/@/renderer/api/subsonic/subsonic-structured-lyrics';
 import {
     getDefaultTranscodingProfiles,
@@ -230,19 +231,6 @@ const SUBSONIC_FAST_BATCH_SIZE = MAX_SUBSONIC_ITEMS * 10;
 //       maxAudioChannels: 8
 //     }
 //   ];
-
-function appendTranscodeParams(url: string, format?: string, bitrate?: number) {
-    let streamUrl = url;
-
-    if (format) {
-        streamUrl += `&format=${format}`;
-    }
-    if (bitrate !== undefined) {
-        streamUrl += `&maxBitRate=${bitrate}`;
-    }
-
-    return streamUrl;
-}
 
 function buildGetTranscodeStreamUrl(
     server: null | undefined | { credential?: string; url?: string },
@@ -1963,15 +1951,22 @@ export const SubsonicController: InternalControllerEndpoint = {
         const { bitrate, format, id, mediaType = 'song', skipAutoTranscode, transcode } = query;
 
         const streamUrl = `${server?.url}/rest/stream.view?id=${id}&v=1.13.0&c=Feishin&${server?.credential}`;
+        const configuredTranscodeUrl = buildSubsonicStreamUrl(streamUrl, {
+            bitrate,
+            format,
+            mode: 'transcode',
+        });
 
         // If transcoding is explicitly enabled, just return the direct transcoded stream URL
         if (transcode) {
-            return appendTranscodeParams(streamUrl, format, bitrate);
+            return configuredTranscodeUrl;
         }
 
         // Used in cases where MPV is the default player, since mpv handles basically every audio format
         if (skipAutoTranscode) {
-            return streamUrl;
+            return buildSubsonicStreamUrl(streamUrl, {
+                mode: 'direct',
+            });
         }
 
         // If the server supports transcoding decision, always use it to determine if we need to transcode
@@ -2017,7 +2012,7 @@ export const SubsonicController: InternalControllerEndpoint = {
 
             // If the server does not return transcode params, manually create the transcode params
             if (!td.transcodeParams) {
-                return appendTranscodeParams(streamUrl, format, bitrate);
+                return configuredTranscodeUrl;
             }
 
             const transcodeStreamUrl = buildGetTranscodeStreamUrl(server, {

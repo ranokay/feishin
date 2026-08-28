@@ -1,3 +1,5 @@
+import type { MpvLoadSource } from '/@/shared/signalpath';
+
 import { ipcRenderer } from 'electron';
 
 import { PlayerData } from '/@/shared/types/domain-types';
@@ -26,8 +28,8 @@ const setProperties = (data: Record<string, any>) => {
     ipcRenderer.send('player-set-properties', data);
 };
 
-const autoNext = (url?: string) => {
-    ipcRenderer.send('player-auto-next', url);
+const autoNext = (stream?: MpvLoadSource) => {
+    ipcRenderer.send('player-auto-next', stream);
 };
 
 const currentTime = () => {
@@ -62,12 +64,12 @@ const seekTo = (seconds: number) => {
     ipcRenderer.send('player-seek-to', seconds);
 };
 
-const setQueue = (current?: string, next?: string, pause?: boolean) => {
+const setQueue = (current?: MpvLoadSource, next?: MpvLoadSource, pause?: boolean) => {
     ipcRenderer.send('player-set-queue', current, next, pause);
 };
 
-const setQueueNext = (url?: string) => {
-    ipcRenderer.send('player-set-queue-next', url);
+const setQueueNext = (stream?: MpvLoadSource) => {
+    ipcRenderer.send('player-set-queue-next', stream);
 };
 
 const stop = () => {

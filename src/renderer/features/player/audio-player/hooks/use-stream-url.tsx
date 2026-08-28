@@ -1,3 +1,5 @@
+import type { MpvLoadSource } from '/@/shared/signalpath';
+
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 
@@ -79,3 +81,18 @@ export const getSongUrl = async (
 
     return url;
 };
+
+export const getMpvStream = async (
+    song: QueueSong,
+    transcode: Partial<TranscodingConfig>,
+): Promise<MpvLoadSource> => ({
+    declaration: {
+        bitDepth: song.bitDepth ?? null,
+        channels: song.channels ?? null,
+        container: song.container ?? null,
+        sampleRate: song.sampleRate ?? null,
+        sizeBytes: song.size || null,
+    },
+    kind: 'library',
+    url: await getSongUrl(song, transcode, true),
+});

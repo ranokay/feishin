@@ -1,3 +1,5 @@
+import type { MpvLoadSource } from '/@/shared/signalpath';
+
 import { app, ipcMain, powerMonitor } from 'electron';
 import { access, rm } from 'fs/promises';
 import uniq from 'lodash/uniq';
@@ -31,9 +33,17 @@ const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mp
 
 // Observability-only second IPC client. Never routes commands; node-mpv keeps command duty.
 let audioStateService: AudioStateService | null = null;
+let queuedStreams: Array<MpvLoadSource | undefined> = [];
 // Bumped on every attach/stop so an in-flight attach from a previous mpv generation
 // cannot overwrite the service of a newer one.
 let audioStateGeneration = 0;
+
+const verifyCurrentQueuedStream = () => {
+    const current = queuedStreams[0];
+    if (current?.kind === 'library') {
+        audioStateService?.requestServerVerification(current);
+    }
+};
 
 const stopAudioStateService = () => {
     audioStateGeneration += 1;
@@ -68,6 +78,7 @@ const attachAudioStateService = async () => {
             return;
         }
         audioStateService = service;
+        verifyCurrentQueuedStream();
         log.debug('mpv audio-state observability attached');
     } catch (error) {
         log.warn('Failed to attach mpv audio-state observability', error);
@@ -260,8 +271,16 @@ const createMpv = async (data: {
 
             // In our 2-item queue model, playlist-pos should normally be 0.
             // When mpv auto-advances to the next track it becomes > 0 (typically 1).
-            if (typeof currentPos === 'number' && currentPos > 0) {
+            if (
+                typeof currentPos === 'number' &&
+                currentPos > 0 &&
+                currentPos !== previousPlaylistPos
+            ) {
+                queuedStreams = queuedStreams.slice(currentPos);
+                verifyCurrentQueuedStream();
                 sendIfCurrent('renderer-player-auto-next');
+            } else if (currentPos === 0 && previousPlaylistPos !== 0) {
+                verifyCurrentQueuedStream();
             }
 
             previousPlaylistPos = currentPos;
@@ -393,6 +412,7 @@ ipcMain.handle(
                 });
             mpvInstance = null;
 
+            queuedStreams = [];
             mpvInstance = await createMpv(data);
             void attachAudioStateService();
             mpvLog({ action: 'Restarted mpv', toast: 'success' });
@@ -412,6 +432,7 @@ ipcMain.handle(
                 action: `Attempting to initialize mpv with parameters: ${JSON.stringify(data)}`,
                 level: 'debug',
             });
+            queuedStreams = [];
             mpvInstance = await createMpv(data);
             void attachAudioStateService();
             setAudioPlayerFallback(false);
@@ -426,6 +447,7 @@ ipcMain.on('player-quit', async () => {
     // stop() also drives playlist-pos to -1; suppress before that so reload does not look like a track end.
     suppressRendererPlaybackEvents = true;
     playbackEventGeneration += 1;
+    queuedStreams = [];
     try {
         await getMpvInstance()?.stop();
         await quit();
@@ -442,6 +464,7 @@ ipcMain.handle('player-is-running', async () => {
 });
 
 ipcMain.handle('player-clean-up', async () => {
+    queuedStreams = [];
     getMpvInstance()?.stop();
     getMpvInstance()?.clearPlaylist();
 });
@@ -518,55 +541,63 @@ ipcMain.on('player-seek-to', async (_event, time: number) => {
 });
 
 // Sets the queue in position 0 and 1 to the given data. Used when manually starting a song or using the next/prev buttons
-ipcMain.on('player-set-queue', async (_event, current?: string, next?: string, pause?: boolean) => {
-    if (!current && !next) {
-        try {
-            await getMpvInstance()?.clearPlaylist();
-            await getMpvInstance()?.pause();
-            return;
-        } catch (err: any | NodeMpvError) {
-            mpvLog({ action: `Failed to clear play queue` }, err);
-        }
-    }
-
-    // When pause is requested (e.g. preload after reload while UI is STOPPED/PAUSED), mpv still
-    // briefly resumes on load. Suppress those events so they do not overwrite renderer status.
-    const shouldSuppressLoadEvents = pause === true;
-    if (shouldSuppressLoadEvents) {
-        suppressRendererPlaybackEvents = true;
-    }
-
-    try {
-        if (current) {
+ipcMain.on(
+    'player-set-queue',
+    async (_event, current?: MpvLoadSource, next?: MpvLoadSource, pause?: boolean) => {
+        queuedStreams = [current, next];
+        if (!current && !next) {
             try {
-                await getMpvInstance()?.load(current, 'replace');
-            } catch (error: any | NodeMpvError) {
-                mpvLog({ action: `Failed to load current song` }, error);
+                await getMpvInstance()?.clearPlaylist();
+                await getMpvInstance()?.pause();
+                return;
+            } catch (err: any | NodeMpvError) {
+                mpvLog({ action: `Failed to clear play queue` }, err);
+            }
+        }
+
+        // When pause is requested (e.g. preload after reload while UI is STOPPED/PAUSED), mpv still
+        // briefly resumes on load. Suppress those events so they do not overwrite renderer status.
+        const shouldSuppressLoadEvents = pause === true;
+        if (shouldSuppressLoadEvents) {
+            suppressRendererPlaybackEvents = true;
+        }
+
+        try {
+            if (current) {
+                try {
+                    await getMpvInstance()?.load(current.url, 'replace');
+                } catch (error: any | NodeMpvError) {
+                    mpvLog({ action: `Failed to load current song` }, error);
+                    await getMpvInstance()?.play();
+                }
+
+                if (next) {
+                    await getMpvInstance()?.load(next.url, 'append');
+                }
+
+                // Let start-file clear the previous track before recording evidence
+                // for the exact URL handed to mpv.
+                setImmediate(verifyCurrentQueuedStream);
+            }
+
+            if (pause) {
+                await getMpvInstance()?.pause();
+            } else if (pause === false) {
+                // Only force play if pause is explicitly false
                 await getMpvInstance()?.play();
             }
-
-            if (next) {
-                await getMpvInstance()?.load(next, 'append');
+        } catch (err: any | NodeMpvError) {
+            mpvLog({ action: `Failed to set play queue` }, err);
+        } finally {
+            if (shouldSuppressLoadEvents) {
+                suppressRendererPlaybackEvents = false;
             }
         }
-
-        if (pause) {
-            await getMpvInstance()?.pause();
-        } else if (pause === false) {
-            // Only force play if pause is explicitly false
-            await getMpvInstance()?.play();
-        }
-    } catch (err: any | NodeMpvError) {
-        mpvLog({ action: `Failed to set play queue` }, err);
-    } finally {
-        if (shouldSuppressLoadEvents) {
-            suppressRendererPlaybackEvents = false;
-        }
-    }
-});
+    },
+);
 
 // Replaces the queue in position 1 to the given data
-ipcMain.on('player-set-queue-next', async (_event, url?: string) => {
+ipcMain.on('player-set-queue-next', async (_event, stream?: MpvLoadSource) => {
     try {
         const size = await getMpvInstance()?.getPlaylistSize();
 
@@ -574,8 +605,9 @@ ipcMain.on('player-set-queue-next', async (_event, url?: string) => {
             await getMpvInstance()?.playlistRemove(1);
         }
 
-        if (url) {
-            getMpvInstance()?.load(url, 'append');
+        queuedStreams[1] = stream;
+        if (stream) {
+            getMpvInstance()?.load(stream.url, 'append');
         }
     } catch (err: any | NodeMpvError) {
         mpvLog({ action: `Failed to set play queue` }, err);
@@ -583,7 +615,7 @@ ipcMain.on('player-set-queue-next', async (_event, url?: string) => {
 });
 
 // Sets the next song in the queue when reaching the end of the queue
-ipcMain.on('player-auto-next', async (_event, url?: string) => {
+ipcMain.on('player-auto-next', async (_event, stream?: MpvLoadSource) => {
     // Always keep the current song as position 0 in the mpv queue
     // This allows us to easily set update the next song in the queue without
     // disturbing the currently playing song
@@ -595,8 +627,9 @@ ipcMain.on('player-auto-next', async (_event, url?: string) => {
                 getMpvInstance()?.pause();
             });
 
-        if (url) {
-            await getMpvInstance()?.load(url, 'append');
+        queuedStreams[1] = stream;
+        if (stream) {
+            await getMpvInstance()?.load(stream.url, 'append');
         }
     } catch (err: any | NodeMpvError) {
         mpvLog({ action: `Failed to load next song` }, err);

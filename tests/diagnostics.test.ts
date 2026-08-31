@@ -39,6 +39,8 @@ function baseSnapshot(overrides: Partial<AudioSnapshot> = {}): AudioSnapshot {
         speed: 1,
         streamUrl:
             'https://navi.example/rest/stream.view?id=abc&v=1.13.0&c=Feishin&u=joe&t=tok123&s=salt9',
+        strictPropertyViolations: [],
+        strictValidationError: null,
         timestamp: 0,
         volume: 100,
         ...overrides,

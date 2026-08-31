@@ -34,6 +34,8 @@ function baseSnapshot(overrides: Partial<AudioSnapshot> = {}): AudioSnapshot {
         playlistPos: 0,
         sequence: 1,
         speed: 1,
+        strictPropertyViolations: [],
+        strictValidationError: null,
         timestamp: 0,
         volume: 100,
         ...overrides,

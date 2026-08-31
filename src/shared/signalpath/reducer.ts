@@ -217,6 +217,8 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
                     entry.detail !== null,
             )
             .map((entry) => ({ detail: `${entry.kind} ${entry.detail}`, kind: entry.kind })),
+        strictPropertyViolations: policy === 'bit-perfect' ? snapshot.strictPropertyViolations : [],
+        strictValidationError: policy === 'bit-perfect' ? snapshot.strictValidationError : null,
     });
 
     return {

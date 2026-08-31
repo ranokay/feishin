@@ -1,3 +1,5 @@
+import { BIT_PERFECT_PROPERTY_PINS, strictPropertyRecord } from './strict-properties';
+
 export const PLAYBACK_POLICIES = ['standard', 'exclusive', 'bit-perfect'] as const;
 
 export type Platform = 'darwin' | 'linux' | 'win32';
@@ -46,6 +48,23 @@ export interface PolicyStartupConfig {
 export type ReplayGainMode = 'album' | 'no' | 'track';
 
 /**
+ * Keeps user mpv arguments intact except where strict playback cannot safely
+ * override them across every supported mpv version.
+ */
+export function filterPolicyExtraParameters(
+    policy: PlaybackPolicy,
+    parameters: readonly string[],
+): string[] {
+    if (policy !== 'bit-perfect') {
+        return [...parameters];
+    }
+    return parameters.filter((parameter) => {
+        const normalized = parameter.trim();
+        return normalized !== '--volume-gain' && !normalized.startsWith('--volume-gain=');
+    });
+}
+
+/**
  * Startup-only mpv configuration a policy demands (AO pinning, exclusive
  * flags, strict pins). Standard returns empty so the existing arg/property
  * set stays byte-identical.
@@ -62,12 +81,7 @@ export function policyStartupConfig(
     const runtimeProperties: Record<string, unknown> = { 'audio-exclusive': 'yes' };
     if (policy === 'bit-perfect') {
         startupArgs.push('--gapless-audio=weak');
-        runtimeProperties['gapless-audio'] = 'weak';
-        runtimeProperties.replaygain = 'no';
-        runtimeProperties.speed = 1;
-        // Gain/mute pins deliberately wait for strict control handling
-        // (T13): pinning them at init would silently unmute and blast audio
-        // at full volume for users switching from a quiet or muted session.
+        Object.assign(runtimeProperties, strictPropertyRecord(BIT_PERFECT_PROPERTY_PINS));
     }
     return { runtimeProperties, startupArgs };
 }

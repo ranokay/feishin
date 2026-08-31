@@ -1,5 +1,3 @@
-import type { MpvLoadSource } from '/@/shared/signalpath';
-
 import { app, ipcMain, powerMonitor } from 'electron';
 import { access, rm } from 'fs/promises';
 import uniq from 'lodash/uniq';
@@ -10,11 +8,23 @@ import process from 'process';
 import { getMainWindow, sendToastToRenderer } from '../../../index';
 import log from '../../../logger';
 import { store } from '../settings';
-import { AudioStateService, type ServerVerificationRequest } from './mpv/audio-state';
+import {
+    AudioStateService,
+    createObservedAudioState,
+    deriveSnapshot,
+    type ServerVerificationRequest,
+} from './mpv/audio-state';
 import { MpvIpcConnection } from './mpv/ipc-client';
 import { probeStreamHeaders } from './mpv/stream-probe';
 
 import { isMacOS, isWindows } from '/@/main/env';
+import {
+    type AudioEngineEvent,
+    type AudioSnapshot,
+    BIT_PERFECT_PROPERTY_PINS,
+    type MpvLoadSource,
+    type PlaybackPolicy,
+} from '/@/shared/signalpath';
 import { PlayerData } from '/@/shared/types/domain-types';
 
 declare module 'node-mpv';
@@ -33,6 +43,8 @@ const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mp
 
 // Observability-only second IPC client. Never routes commands; node-mpv keeps command duty.
 let audioStateService: AudioStateService | null = null;
+let audioStateFallbackEvents: AudioEngineEvent[] = [];
+let audioStateFallbackSnapshot: AudioSnapshot | null = null;
 let queuedStreams: Array<MpvLoadSource | undefined> = [];
 // Bumped on every attach/stop so an in-flight attach from a previous mpv generation
 // cannot overwrite the service of a newer one.
@@ -49,20 +61,37 @@ const stopAudioStateService = () => {
     audioStateGeneration += 1;
     audioStateService?.dispose();
     audioStateService = null;
+    audioStateFallbackEvents = [];
+    audioStateFallbackSnapshot = null;
 };
 
-// Best-effort: observability failure must never affect playback.
-const attachAudioStateService = async () => {
+const publishStrictObservabilityFailure = () => {
+    const detail = 'strict property observability unavailable';
+    const state = createObservedAudioState();
+    state.strictValidationError = detail;
+    audioStateFallbackSnapshot = deriveSnapshot(state, 1);
+    audioStateFallbackEvents = [{ detail, id: 1, time: Date.now(), type: 'strict-invalidated' }];
+    getMainWindow()?.webContents.send('renderer-audio-state-changed', audioStateFallbackSnapshot);
+};
+
+// Observation remains best-effort for ordinary policies; strict failures publish invalid state.
+const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standard') => {
     stopAudioStateService();
     const generation = audioStateGeneration;
     try {
+        const commandMpv = getMpvInstance();
         const connection = await MpvIpcConnection.connect(socketPath);
         const service = new AudioStateService(connection, {
             broadcast: (snapshot) => {
-                getMainWindow()?.webContents.send('renderer-audio-state-changed', snapshot);
+                if (generation === audioStateGeneration) {
+                    getMainWindow()?.webContents.send('renderer-audio-state-changed', snapshot);
+                }
             },
             log,
             onEngineError: (failure) => {
+                if (generation !== audioStateGeneration) {
+                    return;
+                }
                 sendToastToRenderer({
                     message: failure.standardWouldHelp
                         ? `${failure.explanation} Switching to Standard playback policy may help.`
@@ -71,6 +100,17 @@ const attachAudioStateService = async () => {
                 });
             },
             probeStreamHeaders,
+            repairStrictProperty:
+                playbackPolicy === 'bit-perfect'
+                    ? async (pin) => {
+                          if (!commandMpv || commandMpv !== getMpvInstance()) {
+                              throw new Error('mpv command owner changed during strict repair');
+                          }
+                          await commandMpv.setProperty(pin.name, pin.value);
+                      }
+                    : undefined,
+            strictPropertyPins:
+                playbackPolicy === 'bit-perfect' ? BIT_PERFECT_PROPERTY_PINS : undefined,
         });
         await service.start();
         if (generation !== audioStateGeneration) {
@@ -78,12 +118,17 @@ const attachAudioStateService = async () => {
             return;
         }
         audioStateService = service;
+        audioStateFallbackEvents = [];
+        audioStateFallbackSnapshot = null;
         verifyCurrentQueuedStream();
         log.debug('mpv audio-state observability attached');
     } catch (error) {
         log.warn('Failed to attach mpv audio-state observability', error);
         if (generation === audioStateGeneration) {
             stopAudioStateService();
+            if (playbackPolicy === 'bit-perfect') {
+                publishStrictObservabilityFailure();
+            }
         }
     }
 };
@@ -210,6 +255,7 @@ const resolveMpvBinaryPath = async (binaryPath?: string) => {
 const createMpv = async (data: {
     binaryPath?: string;
     extraParameters?: string[];
+    playbackPolicy?: PlaybackPolicy;
     properties?: Record<string, any>;
 }): Promise<MpvAPI> => {
     const { binaryPath, extraParameters, properties } = data;
@@ -394,7 +440,14 @@ ipcMain.on('player-set-properties', async (_event, data: Record<string, any>) =>
 
 ipcMain.handle(
     'player-restart',
-    async (_event, data: { extraParameters?: string[]; properties?: Record<string, any> }) => {
+    async (
+        _event,
+        data: {
+            extraParameters?: string[];
+            playbackPolicy?: PlaybackPolicy;
+            properties?: Record<string, any>;
+        },
+    ) => {
         try {
             mpvLog({
                 action: `Attempting to initialize mpv with parameters: ${JSON.stringify(data)}`,
@@ -402,6 +455,7 @@ ipcMain.handle(
             });
 
             // Clean up previous mpv instance
+            stopAudioStateService();
             suppressRendererPlaybackEvents = true;
             playbackEventGeneration += 1;
             getMpvInstance()?.stop();
@@ -414,7 +468,7 @@ ipcMain.handle(
 
             queuedStreams = [];
             mpvInstance = await createMpv(data);
-            void attachAudioStateService();
+            void attachAudioStateService(data.playbackPolicy);
             mpvLog({ action: 'Restarted mpv', toast: 'success' });
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
@@ -426,7 +480,14 @@ ipcMain.handle(
 
 ipcMain.handle(
     'player-initialize',
-    async (_event, data: { extraParameters?: string[]; properties?: Record<string, any> }) => {
+    async (
+        _event,
+        data: {
+            extraParameters?: string[];
+            playbackPolicy?: PlaybackPolicy;
+            properties?: Record<string, any>;
+        },
+    ) => {
         try {
             mpvLog({
                 action: `Attempting to initialize mpv with parameters: ${JSON.stringify(data)}`,
@@ -434,7 +495,7 @@ ipcMain.handle(
             });
             queuedStreams = [];
             mpvInstance = await createMpv(data);
-            void attachAudioStateService();
+            void attachAudioStateService(data.playbackPolicy);
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
             mpvLog({ action: 'Failed to initialize mpv, falling back to web player' }, err);
@@ -448,13 +509,13 @@ ipcMain.on('player-quit', async () => {
     suppressRendererPlaybackEvents = true;
     playbackEventGeneration += 1;
     queuedStreams = [];
+    stopAudioStateService();
     try {
         await getMpvInstance()?.stop();
         await quit();
     } catch (err: any | NodeMpvError) {
         mpvLog({ action: 'Failed to quit mpv' }, err);
     } finally {
-        stopAudioStateService();
         mpvInstance = null;
     }
 });
@@ -687,12 +748,12 @@ ipcMain.handle('player-metadata', async (): Promise<null | PlayerData> => {
 
 // Latest derived audio snapshot from the observability client (null when mpv is not running)
 ipcMain.handle('player-audio-snapshot', async () => {
-    return audioStateService?.getSnapshot() ?? null;
+    return audioStateService?.getSnapshot() ?? audioStateFallbackSnapshot;
 });
 
 // Bounded audio-engine event log (device/exclusive/rate/filter occurrences)
 ipcMain.handle('player-audio-event-log', async () => {
-    return audioStateService?.getEvents() ?? [];
+    return audioStateService?.getEvents() ?? audioStateFallbackEvents;
 });
 
 // Server-route verification for the playing track (headers + demuxer cross-check)

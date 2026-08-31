@@ -1,5 +1,6 @@
 import type { ConfidenceLevel } from './evidence';
 import type { DecodedParams, OutputParams, SourceDeclaration } from './formats';
+import type { StrictPropertyViolation } from './strict-properties';
 
 import { isPrecisionPreserving } from './formats';
 
@@ -20,6 +21,8 @@ export interface IntegrityObservation {
     serverRouteEvidenceLevel: ConfidenceLevel;
     /** Sample-altering operations outside the af chain: softvol gain, ReplayGain, speed. */
     softwareProcessing?: SoftwareProcessingOp[];
+    strictPropertyViolations?: StrictPropertyViolation[];
+    strictValidationError?: null | string;
 }
 
 export type IntegrityStatus =
@@ -58,6 +61,26 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
     }
     if (source.lossless === false) {
         return { detail, missingEvidence, status: 'lossy-source' };
+    }
+    if (observation.strictValidationError) {
+        return {
+            detail: [observation.strictValidationError],
+            missingEvidence: ['strict-validation'],
+            status: 'unknown',
+        };
+    }
+    if (observation.strictPropertyViolations?.length) {
+        detail.push(
+            ...observation.strictPropertyViolations.map(
+                (violation) =>
+                    `strict property ${violation.property}: expected ${violation.expected}, got ${violation.actual}`,
+            ),
+        );
+        return {
+            detail,
+            missingEvidence,
+            status: isExclusiveRoute(observation.route) ? 'exclusive-processed' : 'processed',
+        };
     }
 
     if (!observation.outputParams) {

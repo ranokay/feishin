@@ -16,7 +16,11 @@ import {
     usePlayerStore,
     useSettingsStore,
 } from '/@/renderer/store';
-import { type Platform, policyStartupConfig } from '/@/shared/signalpath';
+import {
+    filterPolicyExtraParameters,
+    type Platform,
+    policyStartupConfig,
+} from '/@/shared/signalpath';
 import { PlayerStatus } from '/@/shared/types/types';
 
 export interface MpvPlayerEngineHandle extends AudioPlayer {}
@@ -131,18 +135,23 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             const properties: Record<string, any> = {
                 ...getMpvProperties(mpvProperties),
                 'audio-pitch-correction': preservePitch === false ? 'no' : 'yes',
+                mute: isMuted,
                 speed: speed,
                 volume: volume,
                 ...runtimeProperties,
             };
 
-            const extraParameters: string[] = [...mpvExtraParameters, ...startupArgs];
+            const extraParameters: string[] = [
+                ...filterPolicyExtraParameters(playbackPolicy, mpvExtraParameters),
+                ...startupArgs,
+            ];
 
             const audioDevice = mpvAudioDeviceId?.trim() || 'auto';
             extraParameters.push(`--audio-device=${audioDevice}`);
 
             await mpvPlayer?.initialize({
                 extraParameters,
+                playbackPolicy,
                 properties,
             });
 
@@ -151,7 +160,7 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             const { buildMpvAudioFilters } =
                 await import('/@/renderer/features/settings/components/playback/mpv-audio-filters');
             const filterStr = buildMpvAudioFilters(equalizer, compressor);
-            if (filterStr) {
+            if (playbackPolicy !== 'bit-perfect' && filterStr) {
                 mpvPlayer?.setProperties({ af: filterStr });
             }
 
@@ -211,8 +220,13 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
         queueMicrotask(() => {
             setInternalVolume(vol);
         });
+
+        if (playbackPolicy === 'bit-perfect') {
+            return;
+        }
+
         mpvPlayer.volume(volume);
-    }, [volume]);
+    }, [playbackPolicy, volume]);
 
     // Update mute status
     useEffect(() => {
@@ -233,8 +247,12 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             return;
         }
 
+        if (playbackPolicy === 'bit-perfect') {
+            return;
+        }
+
         mpvPlayer.setProperties({ speed });
-    }, [speed]);
+    }, [playbackPolicy, speed]);
 
     // Update pitch correction status
     useEffect(() => {
@@ -372,6 +390,10 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
 
     useImperativeHandle<MpvPlayerEngineHandle, MpvPlayerEngineHandle>(playerRef, () => ({
         decreaseVolume(by: number) {
+            if (playbackPolicy === 'bit-perfect') {
+                return;
+            }
+
             const newVol = Math.max(0, internalVolume - by / 100);
             setInternalVolume(newVol);
             if (mpvPlayer) {
@@ -379,6 +401,10 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             }
         },
         increaseVolume(by: number) {
+            if (playbackPolicy === 'bit-perfect') {
+                return;
+            }
+
             const newVol = Math.min(1, internalVolume + by / 100);
             setInternalVolume(newVol);
             if (mpvPlayer) {
@@ -401,6 +427,10 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             }
         },
         setVolume(vol: number) {
+            if (playbackPolicy === 'bit-perfect') {
+                return;
+            }
+
             const volDecimal = vol / 100 || 0;
             setInternalVolume(volDecimal);
             if (mpvPlayer) {

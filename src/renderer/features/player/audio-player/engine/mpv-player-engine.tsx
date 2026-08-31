@@ -131,6 +131,7 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             const properties: Record<string, any> = {
                 ...getMpvProperties(mpvProperties),
                 'audio-pitch-correction': preservePitch === false ? 'no' : 'yes',
+                mute: isMuted,
                 speed: speed,
                 volume: volume,
                 ...runtimeProperties,
@@ -212,8 +213,13 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
         queueMicrotask(() => {
             setInternalVolume(vol);
         });
+
+        if (playbackPolicy === 'bit-perfect') {
+            return;
+        }
+
         mpvPlayer.volume(volume);
-    }, [volume]);
+    }, [playbackPolicy, volume]);
 
     // Update mute status
     useEffect(() => {
@@ -234,8 +240,12 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             return;
         }
 
+        if (playbackPolicy === 'bit-perfect') {
+            return;
+        }
+
         mpvPlayer.setProperties({ speed });
-    }, [speed]);
+    }, [playbackPolicy, speed]);
 
     // Update pitch correction status
     useEffect(() => {
@@ -373,6 +383,10 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
 
     useImperativeHandle<MpvPlayerEngineHandle, MpvPlayerEngineHandle>(playerRef, () => ({
         decreaseVolume(by: number) {
+            if (playbackPolicy === 'bit-perfect') {
+                return;
+            }
+
             const newVol = Math.max(0, internalVolume - by / 100);
             setInternalVolume(newVol);
             if (mpvPlayer) {
@@ -380,6 +394,10 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             }
         },
         increaseVolume(by: number) {
+            if (playbackPolicy === 'bit-perfect') {
+                return;
+            }
+
             const newVol = Math.min(1, internalVolume + by / 100);
             setInternalVolume(newVol);
             if (mpvPlayer) {
@@ -402,6 +420,10 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             }
         },
         setVolume(vol: number) {
+            if (playbackPolicy === 'bit-perfect') {
+                return;
+            }
+
             const volDecimal = vol / 100 || 0;
             setInternalVolume(volDecimal);
             if (mpvPlayer) {

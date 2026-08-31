@@ -1253,7 +1253,7 @@
         "replayGainFallback_description": "Gain in db to apply if the file has no {{ReplayGain}} tags",
         "replayGainFallback": "{{ReplayGain}} fallback",
         "playbackPolicy_description": "Standard keeps every playback feature available. Exclusive requests direct device access while still allowing processing. Bit-Perfect targets unmodified decoded PCM delivery to your DAC",
-        "playbackPolicy_enforcementNote": "Strict presets are not yet enforced; choosing one does not change playback yet",
+        "playbackPolicy_enforcementNote": "Playback policies actively configure mpv. Bit-Perfect pins and continuously validates its strict signal-path properties",
         "playbackPolicy_optionBitPerfect": "Bit-Perfect",
         "playbackPolicy_optionExclusive": "Exclusive",
         "playbackPolicy_optionStandard": "Standard",

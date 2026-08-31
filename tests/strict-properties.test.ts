@@ -52,6 +52,7 @@ describe('Bit-Perfect runtime property pins', () => {
             { name: 'replaygain', value: 'no' },
             { name: 'speed', value: 1 },
             { name: 'volume', value: 100 },
+            { name: 'volume-gain', value: 0 },
         ]);
 
         expect(policyStartupConfig('bit-perfect', 'darwin').runtimeProperties).toEqual({
@@ -62,6 +63,7 @@ describe('Bit-Perfect runtime property pins', () => {
             replaygain: 'no',
             speed: 1,
             volume: 100,
+            'volume-gain': 0,
         });
     });
 

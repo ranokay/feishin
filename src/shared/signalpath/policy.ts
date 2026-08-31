@@ -48,6 +48,23 @@ export interface PolicyStartupConfig {
 export type ReplayGainMode = 'album' | 'no' | 'track';
 
 /**
+ * Keeps user mpv arguments intact except where strict playback cannot safely
+ * override them across every supported mpv version.
+ */
+export function filterPolicyExtraParameters(
+    policy: PlaybackPolicy,
+    parameters: readonly string[],
+): string[] {
+    if (policy !== 'bit-perfect') {
+        return [...parameters];
+    }
+    return parameters.filter((parameter) => {
+        const normalized = parameter.trim();
+        return normalized !== '--volume-gain' && !normalized.startsWith('--volume-gain=');
+    });
+}
+
+/**
  * Startup-only mpv configuration a policy demands (AO pinning, exclusive
  * flags, strict pins). Standard returns empty so the existing arg/property
  * set stays byte-identical.

@@ -43,7 +43,6 @@ export const OBSERVED_AUDIO_PROPERTIES = [
     'speed',
     'track-list',
     'volume',
-    'volume-gain',
 ] as const;
 
 export interface AudioStateConnection {

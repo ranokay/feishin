@@ -16,7 +16,11 @@ import {
     usePlayerStore,
     useSettingsStore,
 } from '/@/renderer/store';
-import { type Platform, policyStartupConfig } from '/@/shared/signalpath';
+import {
+    filterPolicyExtraParameters,
+    type Platform,
+    policyStartupConfig,
+} from '/@/shared/signalpath';
 import { PlayerStatus } from '/@/shared/types/types';
 
 export interface MpvPlayerEngineHandle extends AudioPlayer {}
@@ -137,7 +141,10 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
                 ...runtimeProperties,
             };
 
-            const extraParameters: string[] = [...mpvExtraParameters, ...startupArgs];
+            const extraParameters: string[] = [
+                ...filterPolicyExtraParameters(playbackPolicy, mpvExtraParameters),
+                ...startupArgs,
+            ];
 
             const audioDevice = mpvAudioDeviceId?.trim() || 'auto';
             extraParameters.push(`--audio-device=${audioDevice}`);

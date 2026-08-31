@@ -6,6 +6,7 @@ import type { SourceDeclaration } from '../src/shared/signalpath/formats';
 import {
     BIT_PERFECT_PROPERTY_PINS,
     buildSignalPathModel,
+    filterPolicyExtraParameters,
     findStrictPropertyViolation,
     policyStartupConfig,
 } from '../src/shared/signalpath';
@@ -52,7 +53,6 @@ describe('Bit-Perfect runtime property pins', () => {
             { name: 'replaygain', value: 'no' },
             { name: 'speed', value: 1 },
             { name: 'volume', value: 100 },
-            { name: 'volume-gain', value: 0 },
         ]);
 
         expect(policyStartupConfig('bit-perfect', 'darwin').runtimeProperties).toEqual({
@@ -63,8 +63,24 @@ describe('Bit-Perfect runtime property pins', () => {
             replaygain: 'no',
             speed: 1,
             volume: 100,
-            'volume-gain': 0,
         });
+    });
+
+    it('rejects user volume gain arguments only under Bit-Perfect', () => {
+        const parameters = [
+            '--cache=yes',
+            '--volume-gain',
+            '--volume-gain=6',
+            '  --volume-gain=-3  ',
+            '--volume-gain-max=12',
+        ];
+
+        expect(filterPolicyExtraParameters('bit-perfect', parameters)).toEqual([
+            '--cache=yes',
+            '--volume-gain-max=12',
+        ]);
+        expect(filterPolicyExtraParameters('standard', parameters)).toEqual(parameters);
+        expect(filterPolicyExtraParameters('exclusive', parameters)).toEqual(parameters);
     });
 
     it('normalizes mpv filter observations before comparing them', () => {

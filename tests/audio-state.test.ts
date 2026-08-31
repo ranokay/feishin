@@ -58,7 +58,6 @@ describe('observed audio property set', () => {
             'speed',
             'track-list',
             'volume',
-            'volume-gain',
         ]);
     });
 });

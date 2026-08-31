@@ -17,7 +17,6 @@ interface StrictPropertyValues {
     replaygain: 'no';
     speed: number;
     volume: number;
-    'volume-gain': number;
 }
 
 export const BIT_PERFECT_PROPERTY_PINS: readonly StrictPropertyPin[] = [
@@ -27,7 +26,6 @@ export const BIT_PERFECT_PROPERTY_PINS: readonly StrictPropertyPin[] = [
     { name: 'replaygain', value: 'no' },
     { name: 'speed', value: 1 },
     { name: 'volume', value: 100 },
-    { name: 'volume-gain', value: 0 },
 ];
 
 export function findStrictPropertyViolation(

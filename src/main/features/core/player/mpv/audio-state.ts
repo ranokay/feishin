@@ -3,6 +3,7 @@ import type {
     AudioSnapshot,
     DecodedParams,
     Evidence,
+    StrictPropertyPin,
 } from '/@/shared/signalpath';
 import type {
     AudioEngineFailure,
@@ -11,6 +12,7 @@ import type {
     ServerVerificationRequest,
     SourceStreamDeclaration,
     StreamHeaderProbe,
+    StrictPropertyViolation,
 } from '/@/shared/signalpath';
 
 import type { MpvEventHandler } from './ipc-client';
@@ -19,6 +21,7 @@ import {
     classifyAoFailure,
     classifyEndFileError,
     evaluateServerRoute,
+    findStrictPropertyViolation,
     redactStreamUrl,
     unknownFailure,
 } from '/@/shared/signalpath';
@@ -30,11 +33,13 @@ export const OBSERVED_AUDIO_PROPERTIES = [
     'audio-device',
     'audio-out-params',
     'audio-params',
+    'audio-samplerate',
     'current-ao',
     'demuxer-cache-state',
     'gapless-audio',
     'mute',
     'playlist-pos',
+    'replaygain',
     'speed',
     'track-list',
     'volume',
@@ -60,6 +65,9 @@ export interface AudioStateServiceOptions {
     onEngineError?: (failure: AudioEngineFailure) => void;
     /** Injectable stream-header probe; verification stays off when absent. */
     probeStreamHeaders?: (url: string) => Promise<null | StreamHeaderProbe>;
+    /** Command-owner callback. The observation connection remains read-only. */
+    repairStrictProperty?: (pin: StrictPropertyPin) => Promise<void>;
+    strictPropertyPins?: readonly StrictPropertyPin[];
 }
 
 export interface ObservedAudioState {
@@ -81,6 +89,8 @@ export interface ObservedAudioState {
     serverRoute: null | ServerRouteEvidence;
     speed: null | number;
     streamUrl: null | string;
+    strictPropertyViolations: StrictPropertyViolation[];
+    strictValidationError: null | string;
     volume: null | number;
 }
 
@@ -206,6 +216,8 @@ export function createObservedAudioState(): ObservedAudioState {
         serverRoute: null,
         speed: null,
         streamUrl: null,
+        strictPropertyViolations: [],
+        strictValidationError: null,
         volume: null,
     };
 }
@@ -230,6 +242,8 @@ export function deriveSnapshot(state: ObservedAudioState, sequence: number): Aud
         serverRoute: state.serverRoute,
         speed: state.speed,
         streamUrl: state.streamUrl,
+        strictPropertyViolations: [...state.strictPropertyViolations],
+        strictValidationError: state.strictValidationError,
         timestamp: Date.now(),
         volume: state.volume,
     };
@@ -267,6 +281,9 @@ export function parseAoLogEvent(prefix: string, text: string): null | PendingAud
 
 const DEFAULT_EVENT_LIMIT = 500;
 const DEFAULT_INTERVAL_MS = 100;
+const STRICT_REPAIR_COMMAND_TIMEOUT_MS = 1000;
+const STRICT_REPAIR_CONFIRMATION_MS = 100;
+const STRICT_REPAIR_MAX_ATTEMPTS = 2;
 
 /**
  * Inputs of the most recent verification request. Kept around so demuxer facts
@@ -289,6 +306,7 @@ export class AudioStateService {
     private readonly eventLimit: number;
     private readonly events: AudioEngineEvent[] = [];
     private readonly intervalMs: number;
+    private readonly invalidatedStrictProperties = new Set<string>();
     private lastSequence = 0;
     private lastVerification: LastServerVerification | null = null;
     private readonly log: {
@@ -301,8 +319,13 @@ export class AudioStateService {
     private readonly probeStreamHeaders:
         | ((url: string) => Promise<null | StreamHeaderProbe>)
         | null;
+    private readonly repairingStrictProperties = new Set<string>();
+    private readonly repairStrictProperty: ((pin: StrictPropertyPin) => Promise<void>) | null;
     private readonly state = createObservedAudioState();
     private stopped = false;
+    private readonly strictPropertyPins = new Map<string, StrictPropertyPin>();
+    private readonly strictRepairAttempts = new Map<string, number>();
+    private readonly strictRepairTimers = new Map<string, NodeJS.Timeout>();
     private verificationGeneration = 0;
 
     constructor(connection: AudioStateConnection, options: AudioStateServiceOptions = {}) {
@@ -313,6 +336,10 @@ export class AudioStateService {
         this.log = options.log ?? { debug: () => {}, warn: () => {} };
         this.onEngineError = options.onEngineError ?? null;
         this.probeStreamHeaders = options.probeStreamHeaders ?? null;
+        this.repairStrictProperty = options.repairStrictProperty ?? null;
+        for (const pin of options.strictPropertyPins ?? []) {
+            this.strictPropertyPins.set(pin.name, pin);
+        }
     }
 
     dispose(): void {
@@ -321,6 +348,10 @@ export class AudioStateService {
             clearTimeout(this.broadcastTimer);
             this.broadcastTimer = null;
         }
+        for (const timer of this.strictRepairTimers.values()) {
+            clearTimeout(timer);
+        }
+        this.strictRepairTimers.clear();
         this.lastVerification = null;
         for (const dispose of this.disposers.splice(0)) {
             dispose();
@@ -395,6 +426,7 @@ export class AudioStateService {
             for (const event of applyPropertyValue(this.state, name, payload['data'])) {
                 this.record(event);
             }
+            this.revalidateStrictProperty(name, payload['data']);
             if (
                 name === 'track-list' &&
                 this.state.demuxer !== null &&
@@ -462,21 +494,36 @@ export class AudioStateService {
             }
         });
 
+        this.disposers.push(this.connection.onClose(() => this.handleClose()));
+
         for (const [index, propertyName] of OBSERVED_AUDIO_PROPERTIES.entries()) {
+            if (this.stopped) {
+                return;
+            }
             try {
                 await this.connection.observe(index + 1, propertyName);
-            } catch {
-                // Property may not exist in older mpv builds; skip it.
+            } catch (error) {
+                if (this.stopped) {
+                    return;
+                }
+                // Older builds may lack a property. Ordinary policy can skip it;
+                // strict policy must expose the missing validation evidence.
+                const pin = this.strictPropertyPins.get(propertyName);
+                if (pin) {
+                    this.state.strictValidationError = `strict property observation unavailable: ${propertyName}`;
+                    this.recordStrictObservationFailure(pin, error);
+                }
             }
         }
 
+        if (this.stopped) {
+            return;
+        }
         try {
             await this.connection.enableLogMessages('v');
         } catch {
             // Verbose logs unavailable; evidence stays at the unknown tier.
         }
-
-        this.disposers.push(this.connection.onClose(() => this.handleClose()));
     }
 
     private applyServerVerification(): void {
@@ -537,6 +584,12 @@ export class AudioStateService {
         this.pushEvent({ detail: null, type: 'connection-lost' });
         // Dead values must not stay queryable: reset to a clean unavailable snapshot.
         Object.assign(this.state, createObservedAudioState());
+        if (this.strictPropertyPins.size > 0) {
+            const detail = 'strict property observability lost';
+            this.state.strictValidationError = detail;
+            this.pushEvent({ detail, type: 'strict-invalidated' });
+            this.log.warn(detail);
+        }
         if (this.broadcastTimer) {
             clearTimeout(this.broadcastTimer);
             this.broadcastTimer = null;
@@ -565,6 +618,143 @@ export class AudioStateService {
     private record(event: PendingAudioEngineEvent): void {
         this.pushEvent(event);
         this.scheduleBroadcast();
+    }
+
+    private recordStrictInvalidation(
+        pin: StrictPropertyPin,
+        violation: StrictPropertyViolation,
+        error?: unknown,
+    ): void {
+        if (this.invalidatedStrictProperties.has(pin.name)) {
+            return;
+        }
+        this.invalidatedStrictProperties.add(pin.name);
+        const detail = `${pin.name}: expected ${violation.expected}, got ${violation.actual}`;
+        this.log.warn(`Strict playback property invalidated (${detail})`, error);
+        this.record({ detail, type: 'strict-invalidated' });
+    }
+
+    private recordStrictObservationFailure(pin: StrictPropertyPin, error: unknown): void {
+        if (this.invalidatedStrictProperties.has(pin.name)) {
+            return;
+        }
+        this.invalidatedStrictProperties.add(pin.name);
+        const detail = `${pin.name}: observation unavailable`;
+        this.log.warn(`Strict playback property invalidated (${detail})`, error);
+        this.record({ detail, type: 'strict-invalidated' });
+    }
+
+    private requestStrictRepair(pin: StrictPropertyPin): void {
+        if (this.repairingStrictProperties.has(pin.name)) {
+            return;
+        }
+        this.repairingStrictProperties.add(pin.name);
+        this.strictRepairAttempts.set(pin.name, (this.strictRepairAttempts.get(pin.name) ?? 0) + 1);
+        const repair = this.repairStrictProperty;
+        let repairResult: Promise<void>;
+        try {
+            repairResult = repair
+                ? repair(pin)
+                : Promise.reject(new Error('no command owner available'));
+        } catch (error) {
+            repairResult = Promise.reject(error);
+        }
+        const timeoutResult = new Promise<void>((_resolve, reject) => {
+            const timer = setTimeout(() => {
+                reject(new Error('strict property repair timed out'));
+            }, STRICT_REPAIR_COMMAND_TIMEOUT_MS);
+            this.strictRepairTimers.set(pin.name, timer);
+        });
+        void Promise.race([repairResult, timeoutResult])
+            .then(() => {
+                const commandTimer = this.strictRepairTimers.get(pin.name);
+                if (commandTimer) {
+                    clearTimeout(commandTimer);
+                    this.strictRepairTimers.delete(pin.name);
+                }
+                if (this.stopped || !this.repairingStrictProperties.has(pin.name)) {
+                    return;
+                }
+                const timer = setTimeout(() => {
+                    this.strictRepairTimers.delete(pin.name);
+                    this.repairingStrictProperties.delete(pin.name);
+                    if (this.stopped) {
+                        return;
+                    }
+                    const violation = this.state.strictPropertyViolations.find(
+                        (candidate) => candidate.property === pin.name,
+                    );
+                    if (!violation) {
+                        this.strictRepairAttempts.delete(pin.name);
+                        return;
+                    }
+                    if (
+                        (this.strictRepairAttempts.get(pin.name) ?? 0) < STRICT_REPAIR_MAX_ATTEMPTS
+                    ) {
+                        this.requestStrictRepair(pin);
+                        return;
+                    }
+                    this.recordStrictInvalidation(pin, violation);
+                }, STRICT_REPAIR_CONFIRMATION_MS);
+                this.strictRepairTimers.set(pin.name, timer);
+            })
+            .catch((error) => {
+                const timer = this.strictRepairTimers.get(pin.name);
+                if (timer) {
+                    clearTimeout(timer);
+                    this.strictRepairTimers.delete(pin.name);
+                }
+                this.repairingStrictProperties.delete(pin.name);
+                if (this.stopped) {
+                    return;
+                }
+                const violation = this.state.strictPropertyViolations.find(
+                    (candidate) => candidate.property === pin.name,
+                );
+                if (violation) {
+                    this.recordStrictInvalidation(pin, violation, error);
+                } else {
+                    this.strictRepairAttempts.delete(pin.name);
+                }
+            });
+    }
+
+    private revalidateStrictProperty(name: string, value: unknown): void {
+        const pin = this.strictPropertyPins.get(name);
+        if (!pin) {
+            return;
+        }
+        const violation = findStrictPropertyViolation(pin, value);
+        const existingIndex = this.state.strictPropertyViolations.findIndex(
+            (candidate) => candidate.property === pin.name,
+        );
+        if (!violation) {
+            if (existingIndex >= 0) {
+                this.state.strictPropertyViolations.splice(existingIndex, 1);
+                this.scheduleBroadcast();
+            }
+            this.invalidatedStrictProperties.delete(pin.name);
+            if (!this.repairingStrictProperties.has(pin.name)) {
+                this.strictRepairAttempts.delete(pin.name);
+            }
+            return;
+        }
+
+        const changed =
+            existingIndex < 0 ||
+            this.state.strictPropertyViolations[existingIndex].actual !== violation.actual;
+        if (existingIndex >= 0) {
+            this.state.strictPropertyViolations[existingIndex] = violation;
+        } else {
+            this.state.strictPropertyViolations.push(violation);
+        }
+        if (changed) {
+            // A transient drift must reach the integrity reducer even when repair
+            // completes inside the normal 100 ms coalescing window.
+            this.emitSnapshot();
+        }
+
+        this.requestStrictRepair(pin);
     }
 
     private scheduleBroadcast(): void {

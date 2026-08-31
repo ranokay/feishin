@@ -143,6 +143,7 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
 
             await mpvPlayer?.initialize({
                 extraParameters,
+                playbackPolicy,
                 properties,
             });
 
@@ -151,7 +152,7 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             const { buildMpvAudioFilters } =
                 await import('/@/renderer/features/settings/components/playback/mpv-audio-filters');
             const filterStr = buildMpvAudioFilters(equalizer, compressor);
-            if (filterStr) {
+            if (playbackPolicy !== 'bit-perfect' && filterStr) {
                 mpvPlayer?.setProperties({ af: filterStr });
             }
 

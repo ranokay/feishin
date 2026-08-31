@@ -12,6 +12,7 @@ import {
     OBSERVED_AUDIO_PROPERTIES,
     parseAoLogEvent,
 } from '../src/main/features/core/player/mpv/audio-state';
+import { BIT_PERFECT_PROPERTY_PINS } from '../src/shared/signalpath';
 
 interface StubConnection extends AudioStateConnection {
     emit(eventName: string, payload: Record<string, unknown>): void;
@@ -47,11 +48,13 @@ describe('observed audio property set', () => {
             'audio-device',
             'audio-out-params',
             'audio-params',
+            'audio-samplerate',
             'current-ao',
             'demuxer-cache-state',
             'gapless-audio',
             'mute',
             'playlist-pos',
+            'replaygain',
             'speed',
             'track-list',
             'volume',
@@ -491,6 +494,61 @@ describe('AudioStateService', () => {
         expect(broadcast).toHaveBeenCalledTimes(2);
     });
 
+    it('invalidates strict validation when the observation connection is lost', async () => {
+        const connection = createStubConnection();
+        const closeHandlers: Array<() => void> = [];
+        connection.onClose = (handler) => {
+            closeHandlers.push(handler);
+            return () => {};
+        };
+        const service = new AudioStateService(connection, {
+            repairStrictProperty: async () => {},
+            strictPropertyPins: BIT_PERFECT_PROPERTY_PINS,
+        });
+
+        await service.start();
+        for (const fireClose of closeHandlers) {
+            fireClose();
+        }
+
+        expect(service.getSnapshot().strictValidationError).toBe(
+            'strict property observability lost',
+        );
+        expect(
+            service
+                .getEvents()
+                .slice(-2)
+                .map((event) => event.type),
+        ).toEqual(['connection-lost', 'strict-invalidated']);
+    });
+
+    it('handles strict connection loss while observers are still starting', async () => {
+        const connection = createStubConnection();
+        const closeHandlers: Array<() => void> = [];
+        connection.onClose = (handler) => {
+            closeHandlers.push(handler);
+            return () => {};
+        };
+        connection.observe = vi.fn(async () => {
+            for (const fireClose of closeHandlers) {
+                fireClose();
+            }
+            throw new Error('connection closed');
+        });
+        const service = new AudioStateService(connection, {
+            repairStrictProperty: async () => {},
+            strictPropertyPins: BIT_PERFECT_PROPERTY_PINS,
+        });
+
+        await service.start();
+
+        expect(connection.observe).toHaveBeenCalledTimes(1);
+        expect(service.getSnapshot().strictValidationError).toBe(
+            'strict property observability lost',
+        );
+        expect(service.getEvents().at(-1)?.type).toBe('strict-invalidated');
+    });
+
     it('continues observing when individual observe calls fail', async () => {
         const connection = createStubConnection();
         connection.observe = vi.fn(async (id: number) => {
@@ -503,6 +561,205 @@ describe('AudioStateService', () => {
         await service.start();
 
         expect(connection.observe).toHaveBeenCalledTimes(OBSERVED_AUDIO_PROPERTIES.length);
+        service.dispose();
+    });
+
+    it('invalidates strict validation when a pinned property cannot be observed', async () => {
+        const connection = createStubConnection();
+        connection.observe = vi.fn(async (_id: number, propertyName: string) => {
+            if (propertyName === 'replaygain') {
+                throw new Error('property unavailable');
+            }
+        });
+        const service = new AudioStateService(connection, {
+            repairStrictProperty: async () => {},
+            strictPropertyPins: BIT_PERFECT_PROPERTY_PINS,
+        });
+
+        await service.start();
+
+        expect(service.getSnapshot().strictValidationError).toBe(
+            'strict property observation unavailable: replaygain',
+        );
+        expect(service.getEvents().at(-1)).toMatchObject({
+            detail: 'replaygain: observation unavailable',
+            type: 'strict-invalidated',
+        });
+        service.dispose();
+    });
+
+    it('reports strict drift immediately and asks the command owner to repair it', async () => {
+        const connection = createStubConnection();
+        const repairStrictProperty = vi.fn(async () => {});
+        const broadcast = vi.fn();
+        const service = new AudioStateService(connection, {
+            broadcast,
+            repairStrictProperty,
+            strictPropertyPins: BIT_PERFECT_PROPERTY_PINS,
+        });
+
+        await service.start();
+        connection.emit('property-change', {
+            data: 1.25,
+            event: 'property-change',
+            name: 'speed',
+        });
+
+        expect(service.getSnapshot().strictPropertyViolations).toEqual([
+            { actual: '1.25', expected: '1', property: 'speed' },
+        ]);
+        expect(broadcast).toHaveBeenCalledTimes(1);
+        expect(repairStrictProperty).toHaveBeenCalledWith({ name: 'speed', value: 1 });
+
+        connection.emit('property-change', {
+            data: 1,
+            event: 'property-change',
+            name: 'speed',
+        });
+        expect(service.getSnapshot().strictPropertyViolations).toEqual([]);
+        service.dispose();
+    });
+
+    it('records strict invalidation when a drift repair fails', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection, {
+            repairStrictProperty: async () => {
+                throw new Error('property is read-only');
+            },
+            strictPropertyPins: BIT_PERFECT_PROPERTY_PINS,
+        });
+
+        await service.start();
+        connection.emit('property-change', {
+            data: 'yes',
+            event: 'property-change',
+            name: 'gapless-audio',
+        });
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(service.getEvents().at(-1)).toMatchObject({
+            detail: 'gapless-audio: expected weak, got yes',
+            type: 'strict-invalidated',
+        });
+        expect(service.getSnapshot().strictPropertyViolations).toHaveLength(1);
+        service.dispose();
+    });
+
+    it('does not invalidate when correction is observed before a repair rejects', async () => {
+        const connection = createStubConnection();
+        let rejectRepair: (error: Error) => void = () => {};
+        const service = new AudioStateService(connection, {
+            repairStrictProperty: () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectRepair = reject;
+                }),
+            strictPropertyPins: BIT_PERFECT_PROPERTY_PINS,
+        });
+
+        await service.start();
+        connection.emit('property-change', { data: 1.25, name: 'speed' });
+        connection.emit('property-change', { data: 1, name: 'speed' });
+        rejectRepair(new Error('late command failure'));
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(service.getSnapshot().strictPropertyViolations).toEqual([]);
+        expect(service.getEvents().some((event) => event.type === 'strict-invalidated')).toBe(
+            false,
+        );
+        service.dispose();
+    });
+
+    it('retries the latest drift observed while a repair is in flight', async () => {
+        const connection = createStubConnection();
+        let finishFirstRepair: () => void = () => {};
+        const repairStrictProperty = vi
+            .fn<() => Promise<void>>()
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        finishFirstRepair = resolve;
+                    }),
+            )
+            .mockResolvedValue(undefined);
+        const service = new AudioStateService(connection, {
+            repairStrictProperty,
+            strictPropertyPins: BIT_PERFECT_PROPERTY_PINS,
+        });
+
+        await service.start();
+        connection.emit('property-change', { data: 1.25, name: 'speed' });
+        connection.emit('property-change', { data: 1.5, name: 'speed' });
+        finishFirstRepair();
+        await vi.advanceTimersByTimeAsync(100);
+
+        expect(repairStrictProperty).toHaveBeenCalledTimes(2);
+        expect(service.getSnapshot().strictPropertyViolations).toEqual([
+            { actual: '1.5', expected: '1', property: 'speed' },
+        ]);
+
+        connection.emit('property-change', { data: 1, name: 'speed' });
+        await vi.advanceTimersByTimeAsync(100);
+        expect(service.getEvents().some((event) => event.type === 'strict-invalidated')).toBe(
+            false,
+        );
+        service.dispose();
+    });
+
+    it('invalidates drift that remains after bounded successful repair commands', async () => {
+        const connection = createStubConnection();
+        const repairStrictProperty = vi.fn(async () => {});
+        const service = new AudioStateService(connection, {
+            repairStrictProperty,
+            strictPropertyPins: BIT_PERFECT_PROPERTY_PINS,
+        });
+
+        await service.start();
+        connection.emit('property-change', { data: 48000, name: 'audio-samplerate' });
+        await vi.advanceTimersByTimeAsync(200);
+
+        expect(repairStrictProperty).toHaveBeenCalledTimes(2);
+        expect(service.getEvents().at(-1)).toMatchObject({
+            detail: 'audio-samplerate: expected 0, got 48000',
+            type: 'strict-invalidated',
+        });
+        service.dispose();
+    });
+
+    it('invalidates a strict repair command that never settles', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection, {
+            repairStrictProperty: () => new Promise<void>(() => {}),
+            strictPropertyPins: BIT_PERFECT_PROPERTY_PINS,
+        });
+
+        await service.start();
+        connection.emit('property-change', { data: 90, name: 'volume' });
+        await vi.advanceTimersByTimeAsync(1000);
+
+        expect(service.getEvents().at(-1)).toMatchObject({
+            detail: 'volume: expected 100, got 90',
+            type: 'strict-invalidated',
+        });
+        service.dispose();
+    });
+
+    it('does not enforce properties when no strict policy is configured', async () => {
+        const connection = createStubConnection();
+        const repairStrictProperty = vi.fn(async () => {});
+        const service = new AudioStateService(connection, { repairStrictProperty });
+
+        await service.start();
+        connection.emit('property-change', {
+            data: 1.5,
+            event: 'property-change',
+            name: 'speed',
+        });
+
+        expect(repairStrictProperty).not.toHaveBeenCalled();
+        expect(service.getSnapshot().strictPropertyViolations).toEqual([]);
+        expect(service.getEvents().some((event) => event.type === 'strict-invalidated')).toBe(
+            false,
+        );
         service.dispose();
     });
 });

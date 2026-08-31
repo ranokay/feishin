@@ -1,3 +1,5 @@
+import { BIT_PERFECT_PROPERTY_PINS, strictPropertyRecord } from './strict-properties';
+
 export const PLAYBACK_POLICIES = ['standard', 'exclusive', 'bit-perfect'] as const;
 
 export type Platform = 'darwin' | 'linux' | 'win32';
@@ -62,12 +64,7 @@ export function policyStartupConfig(
     const runtimeProperties: Record<string, unknown> = { 'audio-exclusive': 'yes' };
     if (policy === 'bit-perfect') {
         startupArgs.push('--gapless-audio=weak');
-        runtimeProperties['gapless-audio'] = 'weak';
-        runtimeProperties.replaygain = 'no';
-        runtimeProperties.speed = 1;
-        // Gain/mute pins deliberately wait for strict control handling
-        // (T13): pinning them at init would silently unmute and blast audio
-        // at full volume for users switching from a quiet or muted session.
+        Object.assign(runtimeProperties, strictPropertyRecord(BIT_PERFECT_PROPERTY_PINS));
     }
     return { runtimeProperties, startupArgs };
 }

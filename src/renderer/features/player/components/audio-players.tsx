@@ -30,6 +30,7 @@ import {
     RadioMetadataHook,
     useIsRadioActive,
     useRadioPlaybackKey,
+    useRadioStore,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { RemoteHook } from '/@/renderer/features/remote/hooks/use-remote';
 import { VisualizerSystemAudioBridgeHook } from '/@/renderer/features/visualizer/components/visualizer-system-audio-bridge';
@@ -141,6 +142,7 @@ export const AudioPlayers = () => {
     } = usePlaybackSettings();
     const { setWebAudio, webAudio: audioContext } = useWebAudio();
     const [fallbackRequested, setFallbackRequested] = useState(false);
+    const setRadioPlaybackType = useRadioStore((state) => state.actions.setActivePlaybackType);
     const activePlaybackType = resolveFallbackPlaybackType(
         playbackPolicy,
         playbackType,
@@ -160,6 +162,10 @@ export const AudioPlayers = () => {
     useEffect(() => {
         setFallbackRequested(false);
     }, [playbackType]);
+
+    useEffect(() => {
+        setRadioPlaybackType(activePlaybackType);
+    }, [activePlaybackType, setRadioPlaybackType]);
 
     return (
         <>

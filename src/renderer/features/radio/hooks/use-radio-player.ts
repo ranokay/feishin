@@ -32,12 +32,14 @@ interface RadioStore {
             stationName?: string,
             stationArt?: null | RadioCurrentStationArt,
         ) => void;
+        setActivePlaybackType: (playbackType: PlaybackPolicyPlayerType) => void;
         setCurrentStreamUrl: (currentStreamUrl: null | string) => void;
         setIsPlaying: (isPlaying: boolean) => void;
         setMetadata: (metadata: null | RadioMetadata) => void;
         setStationName: (stationName: null | string) => void;
         stop: () => void;
     };
+    activePlaybackType: null | PlaybackPolicyPlayerType;
     currentStationArt: null | RadioCurrentStationArt;
     currentStreamUrl: null | string;
     isPlaying: boolean;
@@ -105,6 +107,7 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
                 };
             });
         },
+        setActivePlaybackType: (activePlaybackType) => set({ activePlaybackType }),
         setCurrentStreamUrl: (currentStreamUrl) =>
             set((state) => ({
                 currentStreamUrl,
@@ -114,7 +117,9 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
         setMetadata: (metadata) => set({ metadata }),
         setStationName: (stationName) => set({ stationName }),
         stop: () => {
-            const playbackType = useSettingsStore.getState().playback.type;
+            const playbackType =
+                useRadioStore.getState().activePlaybackType ??
+                useSettingsStore.getState().playback.type;
 
             set({ ...CLEARED_RADIO_STATE });
 
@@ -129,6 +134,7 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
             }
         },
     },
+    activePlaybackType: null,
     currentStationArt: null,
     currentStreamUrl: null,
     isPlaying: false,

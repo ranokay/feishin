@@ -24,6 +24,7 @@ import {
     BIT_PERFECT_PROPERTY_PINS,
     type MpvLoadSource,
     type PlaybackPolicy,
+    resolveStrictPlaybackStop,
 } from '/@/shared/signalpath';
 import { PlayerData } from '/@/shared/types/domain-types';
 
@@ -84,12 +85,23 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
         const service = new AudioStateService(connection, {
             broadcast: (snapshot) => {
                 if (generation === audioStateGeneration) {
+                    if (
+                        commandMpv &&
+                        resolveStrictPlaybackStop(playbackPolicy, 'local', snapshot)
+                    ) {
+                        void commandMpv
+                            .pause()
+                            .catch((error) => log.warn('Failed to stop strict playback', error));
+                    }
                     getMainWindow()?.webContents.send('renderer-audio-state-changed', snapshot);
                 }
             },
             log,
             onEngineError: (failure) => {
                 if (generation !== audioStateGeneration) {
+                    return;
+                }
+                if (playbackPolicy === 'bit-perfect') {
                     return;
                 }
                 sendToastToRenderer({

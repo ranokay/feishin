@@ -213,6 +213,7 @@ describe('buildSignalPathModel', () => {
         });
 
         expect(processingKinds(model)).toContain('gain');
+        expect(model.integrity.status).toBe('exclusive-processed');
     });
 
     it('lists replaygain as requested-tier processing', () => {

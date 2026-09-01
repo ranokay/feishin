@@ -2,8 +2,9 @@ import { t } from 'i18next';
 import isElectron from 'is-electron';
 import { useCallback, useEffect } from 'react';
 
+import { showBitPerfectVolumeLockedToast } from '/@/renderer/features/player/utils/strict-control-feedback';
 import { useIsRadioActive, useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
-import { usePlayerActions, useVolumeWheelStep } from '/@/renderer/store';
+import { usePlaybackSettings, usePlayerActions, useVolumeWheelStep } from '/@/renderer/store';
 import { toast } from '/@/shared/components/toast/toast';
 
 const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
@@ -22,7 +23,9 @@ const toggleRadioPlayPause = () => {
 
 export const useMainPlayerListener = () => {
     const isRadioActive = useIsRadioActive();
+    const { playbackPolicy } = usePlaybackSettings();
     const volumeWheelStep = useVolumeWheelStep();
+    const isBitPerfect = playbackPolicy === 'bit-perfect';
     const {
         decreaseVolume,
         increaseVolume,
@@ -139,10 +142,18 @@ export const useMainPlayerListener = () => {
         });
 
         mpvPlayerListener.rendererVolumeUp(() => {
+            if (isBitPerfect) {
+                showBitPerfectVolumeLockedToast();
+                return;
+            }
             increaseVolume(volumeWheelStep);
         });
 
         mpvPlayerListener.rendererVolumeDown(() => {
+            if (isBitPerfect) {
+                showBitPerfectVolumeLockedToast();
+                return;
+            }
             decreaseVolume(volumeWheelStep);
         });
 
@@ -171,6 +182,7 @@ export const useMainPlayerListener = () => {
         handleMpvError,
         increaseVolume,
         isRadioActive,
+        isBitPerfect,
         mediaAutoNext,
         mediaNext,
         mediaPause,

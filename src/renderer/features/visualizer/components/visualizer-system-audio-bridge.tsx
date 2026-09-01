@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useIsLocalVisualizerSurfaceVisible } from '/@/renderer/features/player/hooks/use-is-local-visualizer-surface-visible';
 import { useVisualizerSystemAudio } from '/@/renderer/features/player/hooks/use-visualizer-system-audio';
 import { closeLocalVisualizerSurfaces } from '/@/renderer/features/player/utils/close-local-visualizer-surfaces';
-import { useMpvSettings, usePlaybackType } from '/@/renderer/store';
+import { useMpvSettings, usePlaybackSettings, usePlaybackType } from '/@/renderer/store';
 import { Button } from '/@/shared/components/button/button';
 import { Group } from '/@/shared/components/group/group';
 import { Modal } from '/@/shared/components/modal/modal';
@@ -48,19 +48,22 @@ function VisualizerSystemAudioBridge() {
     const { t } = useTranslation();
     const playbackType = usePlaybackType();
     const { audioExclusiveMode } = useMpvSettings();
+    const { playbackPolicy } = usePlaybackSettings();
     const isVisualizerSurfaceVisible = useIsLocalVisualizerSurfaceVisible();
     const [promptState, setPromptState] = useState<PromptState>('loading');
     const [sessionAllowCapture, setSessionAllowCapture] = useState(false);
-    const wasBlockedByExclusiveModeRef = useRef(false);
+    const wasBlockedByPlaybackPolicyRef = useRef(false);
     const [isPromptOpen, { close: closePrompt, open: openPrompt, toggle: togglePrompt }] =
         useDisclosure(false);
 
     const isExclusiveModeEnabled = audioExclusiveMode === 'yes';
-    const isVisualizerBlockedByExclusiveMode =
+    const isBitPerfect = playbackPolicy === 'bit-perfect';
+    const isSystemAudioBlocked = isExclusiveModeEnabled || isBitPerfect;
+    const isVisualizerBlockedByPlaybackPolicy =
         isElectron() &&
         playbackType === PlayerType.LOCAL &&
         isVisualizerSurfaceVisible &&
-        isExclusiveModeEnabled;
+        isSystemAudioBlocked;
 
     const persistConsent = useCallback((granted: boolean) => {
         if (!isElectron() || !window.api.localSettings) {
@@ -92,7 +95,7 @@ function VisualizerSystemAudioBridge() {
     const eligibleForPrompt =
         isElectron() &&
         playbackType === PlayerType.LOCAL &&
-        !isExclusiveModeEnabled &&
+        !isSystemAudioBlocked &&
         isVisualizerSurfaceVisible &&
         promptState !== 'loading' &&
         !promptState.consent &&
@@ -107,22 +110,25 @@ function VisualizerSystemAudioBridge() {
     }, [eligibleForPrompt, closePrompt, openPrompt]);
 
     useEffect(() => {
-        if (isVisualizerBlockedByExclusiveMode && !wasBlockedByExclusiveModeRef.current) {
+        if (isVisualizerBlockedByPlaybackPolicy && !wasBlockedByPlaybackPolicyRef.current) {
             toast.error({
-                message: t('visualizer.systemAudioExclusiveModeNotSupported'),
+                id: 'visualizer-system-audio-policy-blocked',
+                message: isBitPerfect
+                    ? t('visualizer.systemAudioBitPerfectNotSupported')
+                    : t('visualizer.systemAudioExclusiveModeNotSupported'),
             });
             setSessionAllowCapture(false);
             closePrompt();
             closeLocalVisualizerSurfaces();
         }
 
-        wasBlockedByExclusiveModeRef.current = isVisualizerBlockedByExclusiveMode;
-    }, [closePrompt, isVisualizerBlockedByExclusiveMode, t]);
+        wasBlockedByPlaybackPolicyRef.current = isVisualizerBlockedByPlaybackPolicy;
+    }, [closePrompt, isBitPerfect, isVisualizerBlockedByPlaybackPolicy, t]);
 
     const shouldAttemptConnection =
         isElectron() &&
         playbackType === PlayerType.LOCAL &&
-        !isExclusiveModeEnabled &&
+        !isSystemAudioBlocked &&
         isVisualizerSurfaceVisible &&
         promptState !== 'loading' &&
         (promptState.consent || sessionAllowCapture);

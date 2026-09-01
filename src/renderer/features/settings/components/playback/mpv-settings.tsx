@@ -1,4 +1,4 @@
-import type { PlaybackPolicy } from '/@/shared/signalpath';
+import type { BitPerfectMuteBehavior, PlaybackPolicy } from '/@/shared/signalpath';
 
 import isElectron from 'is-electron';
 import { memo, useEffect, useState } from 'react';
@@ -35,6 +35,7 @@ export const MpvSettings = memo(() => {
     const { t } = useTranslation();
     const settings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
+    const isBitPerfect = settings.playbackPolicy === 'bit-perfect';
     // const { pause } = usePlayerControls();
     // const { clearQueue } = useQueueControls();
 
@@ -277,6 +278,7 @@ export const MpvSettings = memo(() => {
                         },
                     ]}
                     defaultValue={settings.mpvProperties.replayGainMode}
+                    disabled={isBitPerfect}
                     onChange={(e) => handleSetMpvProperty('replayGainMode', e)}
                 />
             ),
@@ -285,13 +287,14 @@ export const MpvSettings = memo(() => {
 
                 ReplayGain: 'ReplayGain',
             }),
-            note: t('common.restartRequired'),
+            note: isBitPerfect ? t('setting.bitPerfectControlLocked') : t('common.restartRequired'),
             title: t('setting.replayGainMode', { ReplayGain: 'ReplayGain' }),
         },
         {
             control: (
                 <NumberInput
                     defaultValue={settings.mpvProperties.replayGainPreampDB}
+                    disabled={isBitPerfect}
                     onChange={(e) => handleSetMpvProperty('replayGainPreampDB', Number(e) || 0)}
                     width={75}
                 />
@@ -301,12 +304,14 @@ export const MpvSettings = memo(() => {
 
                 ReplayGain: 'ReplayGain',
             }),
+            note: isBitPerfect ? t('setting.bitPerfectControlLocked') : undefined,
             title: t('setting.replayGainPreamp', { ReplayGain: 'ReplayGain' }),
         },
         {
             control: (
                 <Switch
                     defaultChecked={settings.mpvProperties.replayGainClip}
+                    disabled={isBitPerfect}
                     onChange={(e) =>
                         handleSetMpvProperty('replayGainClip', e.currentTarget.checked)
                     }
@@ -317,12 +322,14 @@ export const MpvSettings = memo(() => {
 
                 ReplayGain: 'ReplayGain',
             }),
+            note: isBitPerfect ? t('setting.bitPerfectControlLocked') : undefined,
             title: t('setting.replayGainClipping', { ReplayGain: 'ReplayGain' }),
         },
         {
             control: (
                 <NumberInput
                     defaultValue={settings.mpvProperties.replayGainFallbackDB}
+                    disabled={isBitPerfect}
                     onBlur={(e) =>
                         handleSetMpvProperty('replayGainFallbackDB', Number(e.currentTarget.value))
                     }
@@ -330,6 +337,7 @@ export const MpvSettings = memo(() => {
                 />
             ),
             description: t('setting.replayGainFallback', { ReplayGain: 'ReplayGain' }),
+            note: isBitPerfect ? t('setting.bitPerfectControlLocked') : undefined,
             title: t('setting.replayGainFallback', { ReplayGain: 'ReplayGain' }),
         },
     ];
@@ -361,6 +369,38 @@ export const MpvSettings = memo(() => {
             description: t('setting.playbackPolicy', { context: 'description' }),
             note: t('setting.playbackPolicy', { context: 'enforcementNote' }),
             title: t('setting.playbackPolicy'),
+        },
+        {
+            control: (
+                <Select
+                    data={[
+                        {
+                            label: t('setting.bitPerfectMuteBehavior', {
+                                context: 'optionPause',
+                            }),
+                            value: 'pause',
+                        },
+                        {
+                            label: t('setting.bitPerfectMuteBehavior', {
+                                context: 'optionGainMute',
+                            }),
+                            value: 'gain-mute',
+                        },
+                    ]}
+                    onChange={(value) => {
+                        if (!value) return;
+                        setSettings({
+                            playback: {
+                                bitPerfectMuteBehavior: value as BitPerfectMuteBehavior,
+                            },
+                        });
+                    }}
+                    value={settings.bitPerfectMuteBehavior}
+                />
+            ),
+            description: t('setting.bitPerfectMuteBehavior', { context: 'description' }),
+            note: t('setting.bitPerfectMuteBehavior', { context: 'note' }),
+            title: t('setting.bitPerfectMuteBehavior'),
         },
     ];
 

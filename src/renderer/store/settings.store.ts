@@ -28,7 +28,12 @@ import { mergeOverridingColumns } from '/@/renderer/store/utils';
 import { FontValueSchema } from '/@/renderer/types/fonts';
 import { randomString } from '/@/renderer/utils';
 import { sanitizeCss } from '/@/renderer/utils/sanitize';
-import { normalizePlaybackPolicy, PLAYBACK_POLICIES } from '/@/shared/signalpath';
+import {
+    BIT_PERFECT_MUTE_BEHAVIORS,
+    normalizeBitPerfectMuteBehavior,
+    normalizePlaybackPolicy,
+    PLAYBACK_POLICIES,
+} from '/@/shared/signalpath';
 import { AppTheme } from '/@/shared/themes/app-theme-types';
 import { LibraryItem, LyricSource, SavedCollection } from '/@/shared/types/domain-types';
 import {
@@ -703,6 +708,7 @@ const PlayerFilterSchema = z.object({
 const PlaybackSettingsSchema = z.object({
     audioDeviceId: z.string().nullable().optional(),
     audioFadeOnStatusChange: z.boolean(),
+    bitPerfectMuteBehavior: z.enum([...BIT_PERFECT_MUTE_BEHAVIORS]),
     compressor: CompressorSettingsSchema,
     equalizer: EqSettingsSchema,
     filters: z.array(PlayerFilterSchema),
@@ -2058,6 +2064,7 @@ const initialState: SettingsState = {
     playback: {
         audioDeviceId: undefined,
         audioFadeOnStatusChange: true,
+        bitPerfectMuteBehavior: 'pause',
         compressor: {
             attack: 20,
             enabled: false,
@@ -2912,10 +2919,18 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
+                if (version < 35) {
+                    if (state.playback) {
+                        state.playback.bitPerfectMuteBehavior = normalizeBitPerfectMuteBehavior(
+                            state.playback.bitPerfectMuteBehavior,
+                        );
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 34,
+            version: 35,
         },
     ),
 );

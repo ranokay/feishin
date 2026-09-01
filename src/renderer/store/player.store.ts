@@ -16,6 +16,7 @@ import {
 } from '/@/renderer/store/timestamp.store';
 import { migratePlayerStorePersist, playerStoreStorage } from '/@/renderer/store/utils';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
+import { resolvePlaybackControlAction } from '/@/shared/signalpath';
 import { PlayerData, QueueData, QueueSong, Song } from '/@/shared/types/domain-types';
 import {
     CrossfadeStyle,
@@ -331,6 +332,19 @@ function regenerateShuffledIndexesIfNeeded(state: {
     if (isShuffleEnabled(state)) {
         state.queue.shuffled = generateShuffledIndexes(state.queue.default.length);
     }
+}
+
+// Strict playback pins runtime values without overwriting the user's values for other policies.
+function shouldBlockPlaybackControl(control: 'speed' | 'volume', status: PlayerStatus): boolean {
+    const playback = useSettingsStore.getState().playback;
+    return (
+        resolvePlaybackControlAction(
+            playback.playbackPolicy,
+            playback.bitPerfectMuteBehavior,
+            control,
+            status,
+        ) === 'block'
+    );
 }
 
 const initialState: State = {
@@ -768,6 +782,9 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     });
                 },
                 decreaseVolume: (value: number) => {
+                    if (shouldBlockPlaybackControl('volume', get().player.status)) {
+                        return;
+                    }
                     set((state) => {
                         state.player.volume = Math.max(0, state.player.volume - value);
                     });
@@ -908,6 +925,9 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     };
                 },
                 increaseVolume: (value: number) => {
+                    if (shouldBlockPlaybackControl('volume', get().player.status)) {
+                        return;
+                    }
                     set((state) => {
                         state.player.volume = Math.min(100, state.player.volume + value);
                     });
@@ -1343,8 +1363,28 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     emitPlayerStop(get, reset);
                 },
                 mediaToggleMute: () => {
+                    const playback = useSettingsStore.getState().playback;
+                    const action = resolvePlaybackControlAction(
+                        playback.playbackPolicy,
+                        playback.bitPerfectMuteBehavior,
+                        'mute',
+                        get().player.status,
+                        get().player.muted,
+                    );
+
                     set((state) => {
-                        state.player.muted = !state.player.muted;
+                        if (action === 'toggle-mute') {
+                            state.player.muted = !state.player.muted;
+                        } else if (action === 'pause-and-unmute') {
+                            state.player.muted = false;
+                            if (state.player.status === PlayerStatus.PLAYING) {
+                                state.player.status = PlayerStatus.PAUSED;
+                            }
+                        } else if (action === 'pause') {
+                            state.player.status = PlayerStatus.PAUSED;
+                        } else if (action === 'play') {
+                            state.player.status = PlayerStatus.PLAYING;
+                        }
                     });
                 },
                 mediaTogglePlayPause: () => {
@@ -1557,6 +1597,9 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     });
                 },
                 setSpeed: (speed: number) => {
+                    if (shouldBlockPlaybackControl('speed', get().player.status)) {
+                        return;
+                    }
                     set((state) => {
                         const normalizedSpeed = Math.max(0.5, Math.min(2, speed));
                         state.player.speed = normalizedSpeed;
@@ -1568,6 +1611,9 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     });
                 },
                 setVolume: (volume: number) => {
+                    if (shouldBlockPlaybackControl('volume', get().player.status)) {
+                        return;
+                    }
                     set((state) => {
                         state.player.volume = volume;
                     });

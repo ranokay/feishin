@@ -1,6 +1,6 @@
 import { closeModal, openModal } from '@mantine/modals';
 import isElectron from 'is-electron';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
@@ -182,7 +182,6 @@ export const AudioPlayers = () => {
 };
 
 const mpvPlayerListener = isElectron() ? window.api.mpvPlayerListener : null;
-const ipc = isElectron() ? window.api.ipc : null;
 const STRICT_PLAYBACK_STOP_MODAL_ID = 'strict-playback-stop';
 const STRICT_PLAYBACK_STOP_MESSAGE_KEYS = {
     'device-lost': 'error.strictPlaybackStopDeviceLost',
@@ -213,11 +212,16 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
     const playbackKey = currentSong?._uniqueId ?? null;
     const strictPlaybackState =
         retainedStop?.playbackKey === playbackKey ? retainedStop.state : null;
-    const stop =
-        resolveStrictPlaybackStop(playbackPolicy, playbackType, strictPlaybackState) ??
-        (fallbackRequested && playbackPolicy === 'bit-perfect' && playbackType === PlayerType.LOCAL
-            ? LOCAL_PLAYER_FALLBACK_STOP
-            : null);
+    const stop = useMemo(
+        () =>
+            resolveStrictPlaybackStop(playbackPolicy, playbackType, strictPlaybackState) ??
+            (fallbackRequested &&
+            playbackPolicy === 'bit-perfect' &&
+            playbackType === PlayerType.LOCAL
+                ? LOCAL_PLAYER_FALLBACK_STOP
+                : null),
+        [fallbackRequested, playbackPolicy, playbackType, strictPlaybackState],
+    );
     const stopCause = stop?.cause;
     const stopDetail = stop?.detail;
     const standardWouldHelp = stop?.standardWouldHelp;
@@ -337,7 +341,7 @@ const AudioPlayersContent = ({
             return;
         }
 
-        mpvPlayerListener.rendererPlayerFallback((isFallback: boolean) => {
+        return mpvPlayerListener.rendererPlayerFallback((isFallback: boolean) => {
             setFallbackRequested(isFallback);
             if (isFallback && playbackPolicy === 'bit-perfect') {
                 logger.warn('Blocked WebPlayer fallback under Bit-Perfect policy');
@@ -347,8 +351,6 @@ const AudioPlayersContent = ({
                 logger.info('Playback engine using local (mpv)');
             }
         });
-
-        return () => ipc?.removeAllListeners('renderer-player-fallback');
     }, [playbackPolicy, setFallbackRequested]);
 
     useEffect(() => {

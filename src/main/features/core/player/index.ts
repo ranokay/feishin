@@ -25,6 +25,7 @@ import {
     type MpvLoadSource,
     type PlaybackPolicy,
     resolveStrictPlaybackStop,
+    type StrictPlaybackStop,
 } from '/@/shared/signalpath';
 import { PlayerData } from '/@/shared/types/domain-types';
 
@@ -82,14 +83,31 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
     try {
         const commandMpv = getMpvInstance();
         const connection = await MpvIpcConnection.connect(socketPath);
+        let activeStrictStopKey: null | string = null;
+        const pauseForStrictStop = (stop: StrictPlaybackStop, force = false) => {
+            const key = `${stop.cause}:${stop.detail ?? ''}`;
+            if (!force && activeStrictStopKey === key) {
+                return;
+            }
+            activeStrictStopKey = key;
+            if (!commandMpv) {
+                return;
+            }
+            void commandMpv.pause().catch((error) => {
+                if (activeStrictStopKey === key) {
+                    activeStrictStopKey = null;
+                }
+                log.warn('Failed to stop strict playback', error);
+            });
+        };
         const service = new AudioStateService(connection, {
             broadcast: (snapshot) => {
                 if (generation === audioStateGeneration) {
                     const strictStop = resolveStrictPlaybackStop(playbackPolicy, 'local', snapshot);
-                    if (commandMpv && strictStop?.cause === 'transcode-detected') {
-                        void commandMpv
-                            .pause()
-                            .catch((error) => log.warn('Failed to stop strict playback', error));
+                    if (strictStop) {
+                        pauseForStrictStop(strictStop);
+                    } else {
+                        activeStrictStopKey = null;
                     }
                     getMainWindow()?.webContents.send('renderer-audio-state-changed', snapshot);
                 }
@@ -100,11 +118,7 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
                     return;
                 }
                 if (playbackPolicy === 'bit-perfect') {
-                    if (commandMpv) {
-                        void commandMpv
-                            .pause()
-                            .catch((error) => log.warn('Failed to stop strict playback', error));
-                    }
+                    pauseForStrictStop(failure, true);
                     return;
                 }
                 sendToastToRenderer({

@@ -55,8 +55,9 @@ import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
 import {
+    type PlaybackPolicyPlayerType,
+    resolveFallbackPlaybackType,
     resolveStrictPlaybackStop,
-    shouldUseWebPlayerFallback,
     type StrictPlaybackStop,
 } from '/@/shared/signalpath';
 import { LibraryItem } from '/@/shared/types/domain-types';
@@ -140,6 +141,11 @@ export const AudioPlayers = () => {
     } = usePlaybackSettings();
     const { setWebAudio, webAudio: audioContext } = useWebAudio();
     const [fallbackRequested, setFallbackRequested] = useState(false);
+    const activePlaybackType = resolveFallbackPlaybackType(
+        playbackPolicy,
+        playbackType,
+        fallbackRequested,
+    );
 
     useEffect(() => {
         detectBrowserProfile();
@@ -170,8 +176,8 @@ export const AudioPlayers = () => {
             <QueueRestoreTimestampHook />
             <InitialTimestampRestoreHook />
             <UpdateCurrentSongHook />
-            <RadioAudioInstanceHook />
-            <RadioMetadataHook />
+            <RadioAudioInstanceHook playbackType={activePlaybackType} />
+            <RadioMetadataHook playbackType={activePlaybackType} />
             <VisualizerSystemAudioBridgeHook />
             <AutosaveHook />
             <StrictPlaybackGuard fallbackRequested={fallbackRequested} />
@@ -179,9 +185,8 @@ export const AudioPlayers = () => {
                 audioContext={audioContext}
                 audioDeviceId={audioDeviceId}
                 audioSampleRateHz={audioSampleRateHz}
-                fallbackRequested={fallbackRequested}
                 playbackPolicy={playbackPolicy}
-                playbackType={playbackType}
+                playbackType={activePlaybackType}
                 resetSampleRate={resetSampleRate}
                 serverId={serverId}
                 setFallbackRequested={setFallbackRequested}
@@ -314,7 +319,6 @@ const AudioPlayersContent = ({
     audioContext,
     audioDeviceId,
     audioSampleRateHz,
-    fallbackRequested,
     playbackPolicy,
     playbackType,
     resetSampleRate,
@@ -326,9 +330,8 @@ const AudioPlayersContent = ({
     audioContext: ReturnType<typeof useWebAudio>['webAudio'];
     audioDeviceId: null | string | undefined;
     audioSampleRateHz: number | undefined;
-    fallbackRequested: boolean;
     playbackPolicy: ReturnType<typeof usePlaybackSettings>['playbackPolicy'];
-    playbackType: PlayerType;
+    playbackType: PlaybackPolicyPlayerType;
     resetSampleRate: ReturnType<typeof useSettingsStoreActions>['resetSampleRate'];
     serverId: null | string;
     setFallbackRequested: (requested: boolean) => void;
@@ -336,16 +339,10 @@ const AudioPlayersContent = ({
     webAudio: boolean;
 }) => {
     const isRadioActive = useIsRadioActive();
-    const useWebPlayerFallback = shouldUseWebPlayerFallback(
-        playbackPolicy,
-        playbackType,
-        fallbackRequested,
-    );
-    const activePlaybackType = useWebPlayerFallback ? PlayerType.WEB : playbackType;
 
     useEffect(() => {
-        logger.info('Playback engine', { playbackType: activePlaybackType });
-    }, [activePlaybackType]);
+        logger.info('Playback engine', { playbackType });
+    }, [playbackType]);
 
     useEffect(() => {
         if (!mpvPlayerListener) {
@@ -365,7 +362,7 @@ const AudioPlayersContent = ({
     }, [playbackPolicy, setFallbackRequested]);
 
     useEffect(() => {
-        if (activePlaybackType !== PlayerType.WEB || !webAudio || !('AudioContext' in window)) {
+        if (playbackType !== PlayerType.WEB || !webAudio || !('AudioContext' in window)) {
             return;
         }
 
@@ -453,7 +450,7 @@ const AudioPlayersContent = ({
 
         // Intentionally ignore the sample rate dependency, as it makes things really messy
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activePlaybackType, webAudio]);
+    }, [playbackType, webAudio]);
 
     useEffect(() => {
         if (!audioContext?.context) return undefined;
@@ -481,7 +478,7 @@ const AudioPlayersContent = ({
             return;
         }
 
-        if (activePlaybackType !== PlayerType.WEB) {
+        if (playbackType !== PlayerType.WEB) {
             return;
         }
 
@@ -498,7 +495,7 @@ const AudioPlayersContent = ({
 
             setSink();
         }
-    }, [activePlaybackType, audioContext, audioDeviceId]);
+    }, [audioContext, audioDeviceId, playbackType]);
 
     // Listen to favorite and rating events to update queue songs
     useEffect(() => {
@@ -527,11 +524,11 @@ const AudioPlayersContent = ({
         };
     }, [serverId]);
 
-    if (activePlaybackType === PlayerType.LOCAL) {
+    if (playbackType === PlayerType.LOCAL) {
         return <MpvPlayer />;
     }
 
-    if (activePlaybackType === PlayerType.WEB) {
+    if (playbackType === PlayerType.WEB) {
         if (isRadioActive) {
             return <RadioWebPlayer />;
         }
@@ -539,7 +536,7 @@ const AudioPlayersContent = ({
         return <WebPlayer />;
     }
 
-    if (activePlaybackType === PlayerType.JUKEBOX) {
+    if (playbackType === PlayerType.JUKEBOX) {
         return <JukeboxPlayer />;
     }
 

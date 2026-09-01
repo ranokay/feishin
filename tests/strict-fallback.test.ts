@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     classifyAoFailure,
+    resolveFallbackPlaybackType,
     resolveStrictPlaybackStop,
     retainStrictPlaybackStopState,
     shouldUseWebPlayerFallback,
@@ -59,6 +60,19 @@ describe('shouldUseWebPlayerFallback', () => {
         expect(shouldUseWebPlayerFallback('exclusive', 'local', true)).toBe(true);
         expect(shouldUseWebPlayerFallback('standard', 'local', false)).toBe(false);
         expect(shouldUseWebPlayerFallback('standard', 'web', true)).toBe(false);
+    });
+});
+
+describe('resolveFallbackPlaybackType', () => {
+    it('reports WebPlayer as the active engine after a non-strict local fallback', () => {
+        expect(resolveFallbackPlaybackType('standard', 'local', true)).toBe('web');
+        expect(resolveFallbackPlaybackType('exclusive', 'local', true)).toBe('web');
+    });
+
+    it('keeps the configured engine when fallback is blocked or inactive', () => {
+        expect(resolveFallbackPlaybackType('bit-perfect', 'local', true)).toBe('local');
+        expect(resolveFallbackPlaybackType('standard', 'local', false)).toBe('local');
+        expect(resolveFallbackPlaybackType('standard', 'jukebox', true)).toBe('jukebox');
     });
 });
 

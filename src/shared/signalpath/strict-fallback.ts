@@ -13,6 +13,14 @@ export interface StrictPlaybackStop {
     standardWouldHelp: boolean;
 }
 
+export function resolveFallbackPlaybackType(
+    policy: PlaybackPolicy,
+    playerType: PlaybackPolicyPlayerType,
+    fallbackRequested: boolean,
+): PlaybackPolicyPlayerType {
+    return shouldUseWebPlayerFallback(policy, playerType, fallbackRequested) ? 'web' : playerType;
+}
+
 export function resolveStrictPlaybackStop(
     policy: PlaybackPolicy,
     playerType: PlaybackPolicyPlayerType,

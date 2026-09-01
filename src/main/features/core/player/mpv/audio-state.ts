@@ -308,6 +308,7 @@ interface LastServerVerification {
 }
 
 export class AudioStateService {
+    private activePlaylistEntryId: null | number = null;
     private broadcastTimer: NodeJS.Timeout | null = null;
     private readonly connection: AudioStateConnection;
     private disposers: Array<() => void> = [];
@@ -503,25 +504,17 @@ export class AudioStateService {
             // Stale route evidence, URLs, and errors must not bleed into the
             // new track. A newer request in flight re-populates them.
             const playlistEntryId = payload['playlist_entry_id'];
+            this.activePlaylistEntryId =
+                typeof playlistEntryId === 'number' ? playlistEntryId : null;
             this.state.playbackKey =
-                typeof playlistEntryId === 'number'
-                    ? (this.playbackKeysByEntryId.get(playlistEntryId) ?? null)
+                this.activePlaylistEntryId !== null
+                    ? (this.playbackKeysByEntryId.get(this.activePlaylistEntryId) ?? null)
                     : null;
             this.state.serverRoute = null;
             this.state.streamUrl = null;
             this.state.lastError = null;
             this.state.demuxer = null;
-            const verificationMatchesPlayback =
-                this.state.playbackKey !== null &&
-                this.verificationPlaybackKey === this.state.playbackKey;
-            if (!verificationMatchesPlayback) {
-                this.verificationGeneration += 1;
-                this.verificationPlaybackKey = null;
-                this.lastVerification = null;
-            } else if (this.lastVerification?.playbackKey === this.state.playbackKey) {
-                this.lastVerification.demuxerApplied = false;
-                this.applyServerVerification();
-            }
+            this.reconcileVerificationWithPlayback();
             this.record({ detail: null, type: 'track-started' });
         });
         this.subscribe('end-file', (payload) => {
@@ -661,6 +654,24 @@ export class AudioStateService {
         this.nextEventId += 1;
         if (this.events.length > this.eventLimit) {
             this.events.splice(0, this.events.length - this.eventLimit);
+        }
+    }
+
+    private reconcileVerificationWithPlayback(): void {
+        if (this.state.playbackKey === null) {
+            // Playlist observation may arrive after start-file. Keep a keyed
+            // request pending until that mapping either confirms or rejects it.
+            return;
+        }
+        if (this.verificationPlaybackKey !== this.state.playbackKey) {
+            this.verificationGeneration += 1;
+            this.verificationPlaybackKey = null;
+            this.lastVerification = null;
+            return;
+        }
+        if (this.lastVerification?.playbackKey === this.state.playbackKey) {
+            this.lastVerification.demuxerApplied = false;
+            this.applyServerVerification();
         }
     }
 
@@ -845,6 +856,11 @@ export class AudioStateService {
         this.playbackKeysByEntryId.clear();
         for (const [entryId, playbackKey] of nextKeys) {
             this.playbackKeysByEntryId.set(entryId, playbackKey);
+        }
+        if (this.state.playbackKey === null && this.activePlaylistEntryId !== null) {
+            this.state.playbackKey =
+                this.playbackKeysByEntryId.get(this.activePlaylistEntryId) ?? null;
+            this.reconcileVerificationWithPlayback();
         }
     }
 }

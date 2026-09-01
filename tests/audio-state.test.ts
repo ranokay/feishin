@@ -1137,6 +1137,34 @@ describe('AudioStateService server-route verification', () => {
         service.dispose();
     });
 
+    it('recovers the active playback key when playlist mapping arrives late', async () => {
+        const connection = createStubConnection();
+        const onEngineError = vi.fn();
+        const service = new AudioStateService(connection, {
+            onEngineError,
+            resolvePlaybackKey: () => 'song-1',
+        });
+        await service.start();
+
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 10 });
+        expect(service.getSnapshot().playbackKey).toBeNull();
+
+        connection.emit('property-change', {
+            data: [{ filename: 'https://x/first', id: 10 }],
+            event: 'property-change',
+            name: 'playlist',
+        });
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio',
+            text: 'failed to set hogmode: -536870196',
+        });
+
+        expect(service.getSnapshot().playbackKey).toBe('song-1');
+        expect(onEngineError).toHaveBeenCalledWith(expect.any(Object), 'song-1');
+        service.dispose();
+    });
+
     it('records an unknown-cause typed error when playback ends with an error', async () => {
         const connection = createStubConnection();
         const onEngineError = vi.fn();

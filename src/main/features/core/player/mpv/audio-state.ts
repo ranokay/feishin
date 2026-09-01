@@ -301,6 +301,8 @@ interface LastServerVerification {
     demuxerApplied: boolean;
     generation: number;
     headers: null | StreamHeaderProbe;
+    /** Queue identity that requested this verification. */
+    playbackKey: null | string;
     /** Redacted URL of the request; restored when start-file raced the probe. */
     streamUrl: string;
 }
@@ -337,6 +339,7 @@ export class AudioStateService {
     private readonly strictRepairAttempts = new Map<string, number>();
     private readonly strictRepairTimers = new Map<string, NodeJS.Timeout>();
     private verificationGeneration = 0;
+    private verificationPlaybackKey: null | string = null;
 
     constructor(connection: AudioStateConnection, options: AudioStateServiceOptions = {}) {
         this.connection = connection;
@@ -385,20 +388,27 @@ export class AudioStateService {
      * and cross-checks them against the library declaration plus demuxer facts.
      * Failures degrade to absent evidence, never to a claimed verdict.
      */
-    requestServerVerification(request: ServerVerificationRequest): void {
+    requestServerVerification(
+        request: ServerVerificationRequest,
+        playbackKey: null | string = this.state.playbackKey,
+    ): void {
         if (this.stopped || !this.probeStreamHeaders) {
             return;
         }
         const generation = ++this.verificationGeneration;
+        this.verificationPlaybackKey = playbackKey;
+        this.lastVerification = null;
         // Stale evidence from the previous track must not survive the new
         // request - demuxer facts included, otherwise a fast probe would pair
         // the previous track's codec/rate with this track's headers.
-        this.state.serverRoute = null;
-        this.state.demuxer = null;
         // Kept for the Stream Inspector, redacted: stream URLs carry credentials.
         const streamUrl = redactStreamUrl(request.url);
-        this.state.streamUrl = streamUrl;
-        this.scheduleBroadcast();
+        if (playbackKey === this.state.playbackKey) {
+            this.state.serverRoute = null;
+            this.state.demuxer = null;
+            this.state.streamUrl = streamUrl;
+            this.scheduleBroadcast();
+        }
         const probe = this.probeStreamHeaders;
 
         void Promise.resolve()
@@ -420,6 +430,7 @@ export class AudioStateService {
                     demuxerApplied: this.state.demuxer !== null,
                     generation,
                     headers,
+                    playbackKey,
                     streamUrl,
                 };
                 this.applyServerVerification();
@@ -499,8 +510,17 @@ export class AudioStateService {
             this.state.serverRoute = null;
             this.state.streamUrl = null;
             this.state.lastError = null;
-            if (this.lastVerification) {
-                this.lastVerification.demuxerApplied = true;
+            this.state.demuxer = null;
+            const verificationMatchesPlayback =
+                this.state.playbackKey !== null &&
+                this.verificationPlaybackKey === this.state.playbackKey;
+            if (!verificationMatchesPlayback) {
+                this.verificationGeneration += 1;
+                this.verificationPlaybackKey = null;
+                this.lastVerification = null;
+            } else if (this.lastVerification?.playbackKey === this.state.playbackKey) {
+                this.lastVerification.demuxerApplied = false;
+                this.applyServerVerification();
             }
             this.record({ detail: null, type: 'track-started' });
         });
@@ -552,6 +572,10 @@ export class AudioStateService {
             return;
         }
         if (this.stopped || verification.generation !== this.verificationGeneration) {
+            return;
+        }
+        if (verification.playbackKey !== this.state.playbackKey) {
+            verification.demuxerApplied = true;
             return;
         }
         const evidence = evaluateServerRoute({

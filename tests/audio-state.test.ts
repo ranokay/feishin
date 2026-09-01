@@ -967,6 +967,92 @@ describe('AudioStateService server-route verification', () => {
         service.dispose();
     });
 
+    it('discards an in-flight result after playback advances to another track', async () => {
+        const connection = createStubConnection();
+        let resolveProbe: ((probe: null | StreamHeaderProbe) => void) | undefined;
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: () =>
+                new Promise((resolve) => {
+                    resolveProbe = resolve;
+                }),
+            resolvePlaybackKey: (_path, position) => ['song-1', 'song-2'][position] ?? null,
+        });
+        await service.start();
+        connection.emit('property-change', {
+            data: [
+                { filename: 'https://x/first', id: 10 },
+                { filename: 'https://x/second', id: 11 },
+            ],
+            event: 'property-change',
+            name: 'playlist',
+        });
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 10 });
+
+        service.requestServerVerification(
+            { declaration: FLAC_DECLARATION, url: 'https://x/first' },
+            'song-1',
+        );
+        await flushMicrotasks();
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 11 });
+        resolveProbe?.({
+            acceptRanges: null,
+            contentLength: null,
+            contentType: 'audio/mpeg',
+        });
+        await flushMicrotasks();
+
+        expect(service.getSnapshot()).toMatchObject({
+            playbackKey: 'song-2',
+            serverRoute: null,
+            streamUrl: null,
+        });
+        expect(service.getEvents().some((event) => event.type === 'transcode-detected')).toBe(
+            false,
+        );
+        service.dispose();
+    });
+
+    it('applies an early probe result once its track starts', async () => {
+        const connection = createStubConnection();
+        let resolveProbe: ((probe: null | StreamHeaderProbe) => void) | undefined;
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: () =>
+                new Promise((resolve) => {
+                    resolveProbe = resolve;
+                }),
+            resolvePlaybackKey: (_path, position) => ['song-1', 'song-2'][position] ?? null,
+        });
+        await service.start();
+        connection.emit('property-change', {
+            data: [
+                { filename: 'https://x/first', id: 10 },
+                { filename: 'https://x/second', id: 11 },
+            ],
+            event: 'property-change',
+            name: 'playlist',
+        });
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 10 });
+
+        service.requestServerVerification(
+            { declaration: FLAC_DECLARATION, url: 'https://x/second' },
+            'song-2',
+        );
+        await flushMicrotasks();
+        resolveProbe?.({
+            acceptRanges: null,
+            contentLength: null,
+            contentType: 'audio/mpeg',
+        });
+        await flushMicrotasks();
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 11 });
+
+        expect(service.getSnapshot()).toMatchObject({
+            playbackKey: 'song-2',
+            serverRoute: expect.objectContaining({ route: 'transcoded' }),
+        });
+        service.dispose();
+    });
+
     it('degrades to unverified absence when the probe fails', async () => {
         const connection = createStubConnection();
         const service = new AudioStateService(connection, {

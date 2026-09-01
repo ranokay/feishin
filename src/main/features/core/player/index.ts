@@ -57,7 +57,7 @@ let audioStateGeneration = 0;
 const verifyCurrentQueuedStream = () => {
     const current = queuedStreams[0];
     if (current?.kind === 'library') {
-        audioStateService?.requestServerVerification(current);
+        audioStateService?.requestServerVerification(current, current.playbackKey);
     }
 };
 

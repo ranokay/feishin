@@ -122,6 +122,11 @@ export function MpvPlayer() {
                         clearInterval(fadeIntervalRef.current);
                         fadeIntervalRef.current = null;
                     }
+                    // Pause mpv before React can apply an inherited mute clear.
+                    // Otherwise the engine's mute effect may briefly unmute live playback.
+                    if (status !== PlayerStatus.PLAYING) {
+                        playerRef.current?.pause();
+                    }
                     setLocalPlayerStatus(status);
                     return;
                 }

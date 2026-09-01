@@ -61,7 +61,7 @@ describe('resolvePlaybackControlAction', () => {
         );
     });
 
-    it('pauses before clearing a mute inherited from another mode', () => {
+    it('requests pause and mute clearing for a mute inherited from another mode', () => {
         expect(resolvePlaybackControlAction('bit-perfect', 'pause', 'mute', 'playing', true)).toBe(
             'pause-and-unmute',
         );

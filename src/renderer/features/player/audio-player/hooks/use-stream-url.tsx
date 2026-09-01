@@ -94,5 +94,6 @@ export const getMpvStream = async (
         sizeBytes: song.size || null,
     },
     kind: 'library',
+    playbackKey: song._uniqueId,
     url: await getSongUrl(song, transcode, true),
 });

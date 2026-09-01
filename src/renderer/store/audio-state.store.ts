@@ -4,8 +4,6 @@ import isElectron from 'is-electron';
 import { shallow } from 'zustand/shallow';
 import { createWithEqualityFn } from 'zustand/traditional';
 
-import { usePlayerStoreBase } from './player.store';
-
 import { logger } from '/@/renderer/utils/logger';
 import { retainStrictPlaybackStopState } from '/@/shared/signalpath';
 
@@ -20,8 +18,6 @@ interface AudioStateState {
     strictPlaybackStop: null | RetainedStrictPlaybackStopState;
 }
 
-const getPlaybackKey = () => usePlayerStoreBase.getState().getCurrentSong()?._uniqueId ?? null;
-
 export const useAudioStateStore = createWithEqualityFn<AudioStateActions & AudioStateState>()(
     (set) => ({
         clearStrictPlaybackStop: () =>
@@ -33,7 +29,6 @@ export const useAudioStateStore = createWithEqualityFn<AudioStateActions & Audio
                 snapshot,
                 strictPlaybackStop: retainStrictPlaybackStopState(
                     state.strictPlaybackStop,
-                    getPlaybackKey(),
                     snapshot,
                 ),
             })),

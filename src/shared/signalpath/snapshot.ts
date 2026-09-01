@@ -51,6 +51,8 @@ export interface AudioSnapshot {
     muted: boolean | null;
     outputParams: null | OutputParams;
     physicalFormat: Evidence<string> | null;
+    /** Renderer queue identity captured by mpv for the file that produced this snapshot. */
+    playbackKey: null | string;
     playlistPos: null | number;
     sequence: number;
     /** Server-route verification result; absent until the stream probe resolves. */

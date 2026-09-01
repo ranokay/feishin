@@ -2,10 +2,8 @@ import type { AudioEngineFailureCause } from './engine-errors';
 import type { PlaybackPolicy, PlaybackPolicyPlayerType } from './policy';
 import type { AudioSnapshot } from './snapshot';
 
-export interface RetainedStrictPlaybackStopState {
-    playbackKey: null | string;
-    state: StrictPlaybackState;
-}
+export type RetainedStrictPlaybackStopState = Pick<AudioSnapshot, 'playbackKey'> &
+    StrictPlaybackState;
 
 export type StrictPlaybackState = Partial<Pick<AudioSnapshot, 'lastError' | 'serverRoute'>>;
 
@@ -38,20 +36,19 @@ export function resolveStrictPlaybackStop(
 
 export function retainStrictPlaybackStopState(
     current: null | RetainedStrictPlaybackStopState,
-    playbackKey: null | string,
-    next: StrictPlaybackState,
+    next: RetainedStrictPlaybackStopState,
 ): null | RetainedStrictPlaybackStopState {
     if (next.lastError || next.serverRoute?.route === 'transcoded') {
         if (
-            current?.playbackKey === playbackKey &&
-            current.state.lastError === next.lastError &&
-            current.state.serverRoute === next.serverRoute
+            current?.playbackKey === next.playbackKey &&
+            current.lastError === next.lastError &&
+            current.serverRoute === next.serverRoute
         ) {
             return current;
         }
-        return { playbackKey, state: next };
+        return next;
     }
-    return current?.playbackKey === playbackKey ? current : null;
+    return current?.playbackKey === next.playbackKey ? current : null;
 }
 
 export function shouldUseWebPlayerFallback(

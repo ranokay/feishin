@@ -65,11 +65,15 @@ describe('shouldUseWebPlayerFallback', () => {
 describe('retainStrictPlaybackStopState', () => {
     it('keeps a failure latched when a later snapshot clears the engine error', () => {
         const lastError = classifyAoFailure('[ao/coreaudio] failed to set hogmode: device is busy');
-        const latched = retainStrictPlaybackStopState(null, 'song-1', { lastError });
+        const latched = retainStrictPlaybackStopState(null, {
+            lastError,
+            playbackKey: 'song-1',
+        });
 
         expect(
-            retainStrictPlaybackStopState(latched, 'song-1', {
+            retainStrictPlaybackStopState(latched, {
                 lastError: null,
+                playbackKey: 'song-1',
                 serverRoute: null,
             }),
         ).toBe(latched);
@@ -77,11 +81,15 @@ describe('retainStrictPlaybackStopState', () => {
 
     it('releases a latched failure when the track changes', () => {
         const lastError = classifyAoFailure('[ao/coreaudio] failed to set hogmode: device is busy');
-        const latched = retainStrictPlaybackStopState(null, 'song-1', { lastError });
+        const latched = retainStrictPlaybackStopState(null, {
+            lastError,
+            playbackKey: 'song-1',
+        });
 
         expect(
-            retainStrictPlaybackStopState(latched, 'song-2', {
+            retainStrictPlaybackStopState(latched, {
                 lastError: null,
+                playbackKey: 'song-2',
                 serverRoute: null,
             }),
         ).toBeNull();

@@ -210,8 +210,7 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
     const syncPlaybackKey = useAudioStateStore((state) => state.syncPlaybackKey);
     const handledStop = useRef<null | string>(null);
     const playbackKey = currentSong?._uniqueId ?? null;
-    const strictPlaybackState =
-        retainedStop?.playbackKey === playbackKey ? retainedStop.state : null;
+    const strictPlaybackState = retainedStop?.playbackKey === playbackKey ? retainedStop : null;
     const stop = useMemo(
         () =>
             resolveStrictPlaybackStop(playbackPolicy, playbackType, strictPlaybackState) ??

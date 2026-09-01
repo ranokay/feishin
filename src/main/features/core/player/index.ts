@@ -138,6 +138,14 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
                           await commandMpv.setProperty(pin.name, pin.value);
                       }
                     : undefined,
+            resolvePlaybackKey: (path, position) => {
+                const positioned = queuedStreams[position];
+                const source =
+                    positioned?.url === path
+                        ? positioned
+                        : queuedStreams.find((candidate) => candidate?.url === path);
+                return source?.kind === 'library' ? source.playbackKey : null;
+            },
             strictPropertyPins:
                 playbackPolicy === 'bit-perfect' ? BIT_PERFECT_PROPERTY_PINS : undefined,
         });

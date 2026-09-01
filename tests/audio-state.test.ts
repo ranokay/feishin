@@ -53,6 +53,7 @@ describe('observed audio property set', () => {
             'demuxer-cache-state',
             'gapless-audio',
             'mute',
+            'playlist',
             'playlist-pos',
             'replaygain',
             'speed',
@@ -991,9 +992,22 @@ describe('AudioStateService server-route verification', () => {
         const connection = createStubConnection();
         const broadcast = vi.fn();
         const onEngineError = vi.fn();
-        const service = new AudioStateService(connection, { broadcast, onEngineError });
+        const service = new AudioStateService(connection, {
+            broadcast,
+            onEngineError,
+            resolvePlaybackKey: (_path, position) => ['song-1', 'song-2'][position] ?? null,
+        });
         await service.start();
 
+        connection.emit('property-change', {
+            data: [
+                { filename: 'https://x/first', id: 10 },
+                { filename: 'https://x/second', id: 11 },
+            ],
+            event: 'property-change',
+            name: 'playlist',
+        });
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 10 });
         connection.emit('log-message', {
             event: 'log-message',
             prefix: 'ao/coreaudio',
@@ -1011,8 +1025,12 @@ describe('AudioStateService server-route verification', () => {
         expect(broadcast).toHaveBeenCalledWith(
             expect.objectContaining({
                 lastError: expect.objectContaining({ cause: 'exclusive-contention' }),
+                playbackKey: 'song-1',
             }),
         );
+
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 11 });
+        expect(service.getSnapshot().playbackKey).toBe('song-2');
         service.dispose();
     });
 

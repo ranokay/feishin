@@ -145,6 +145,16 @@ export const AudioPlayers = () => {
         detectBrowserProfile();
     }, []);
 
+    useEffect(() => {
+        const retryLocalPlayer = () => setFallbackRequested(false);
+        eventEmitter.on('MPV_RELOAD', retryLocalPlayer);
+        return () => eventEmitter.off('MPV_RELOAD', retryLocalPlayer);
+    }, []);
+
+    useEffect(() => {
+        setFallbackRequested(false);
+    }, [playbackType]);
+
     return (
         <>
             <SleepTimerHook />

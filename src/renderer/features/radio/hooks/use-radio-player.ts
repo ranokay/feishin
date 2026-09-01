@@ -1,10 +1,13 @@
+import type { PlaybackPolicyPlayerType } from '/@/shared/signalpath';
+
 import IcecastMetadataStats from 'icecast-metadata-stats';
 import isElectron from 'is-electron';
+import { nanoid } from 'nanoid';
 import React, { useEffect } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
-import { usePlaybackType, usePlayerStoreBase, useSettingsStore } from '/@/renderer/store';
+import { usePlayerStoreBase, useSettingsStore } from '/@/renderer/store';
 import { logger } from '/@/renderer/utils/logger';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
@@ -29,16 +32,19 @@ interface RadioStore {
             stationName?: string,
             stationArt?: null | RadioCurrentStationArt,
         ) => void;
+        setActivePlaybackType: (playbackType: PlaybackPolicyPlayerType) => void;
         setCurrentStreamUrl: (currentStreamUrl: null | string) => void;
         setIsPlaying: (isPlaying: boolean) => void;
         setMetadata: (metadata: null | RadioMetadata) => void;
         setStationName: (stationName: null | string) => void;
         stop: () => void;
     };
+    activePlaybackType: null | PlaybackPolicyPlayerType;
     currentStationArt: null | RadioCurrentStationArt;
     currentStreamUrl: null | string;
     isPlaying: boolean;
     metadata: null | RadioMetadata;
+    playbackKey: null | string;
     stationName: null | string;
 }
 
@@ -47,6 +53,7 @@ const CLEARED_RADIO_STATE = {
     currentStreamUrl: null,
     isPlaying: false,
     metadata: null,
+    playbackKey: null,
     stationName: null,
 } as const;
 
@@ -94,16 +101,25 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
                     currentStreamUrl: newStreamUrl,
                     isPlaying: true,
                     metadata: isSwitchingStation ? null : state.metadata,
+                    playbackKey:
+                        isSwitchingStation || !state.playbackKey ? nanoid() : state.playbackKey,
                     stationName: newStationName,
                 };
             });
         },
-        setCurrentStreamUrl: (currentStreamUrl) => set({ currentStreamUrl }),
+        setActivePlaybackType: (activePlaybackType) => set({ activePlaybackType }),
+        setCurrentStreamUrl: (currentStreamUrl) =>
+            set((state) => ({
+                currentStreamUrl,
+                playbackKey: currentStreamUrl ? (state.playbackKey ?? nanoid()) : null,
+            })),
         setIsPlaying: (isPlaying) => set({ isPlaying }),
         setMetadata: (metadata) => set({ metadata }),
         setStationName: (stationName) => set({ stationName }),
         stop: () => {
-            const playbackType = useSettingsStore.getState().playback.type;
+            const playbackType =
+                useRadioStore.getState().activePlaybackType ??
+                useSettingsStore.getState().playback.type;
 
             set({ ...CLEARED_RADIO_STATE });
 
@@ -118,16 +134,20 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
             }
         },
     },
+    activePlaybackType: null,
     currentStationArt: null,
     currentStreamUrl: null,
     isPlaying: false,
     metadata: null,
+    playbackKey: null,
     stationName: null,
 }));
 
 export const useIsPlayingRadio = () => useRadioStore((state) => state.isPlaying);
 
 export const useIsRadioActive = () => useRadioStore((state) => Boolean(state.currentStreamUrl));
+
+export const useRadioPlaybackKey = () => useRadioStore((state) => state.playbackKey);
 
 export const useRadioPlayer = () => {
     const currentStationArt = useRadioStore((state) => state.currentStationArt);
@@ -157,11 +177,11 @@ export const useRadioControls = () => {
 
 const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
 
-export const useRadioAudioInstance = () => {
+export const useRadioAudioInstance = (playbackType: PlaybackPolicyPlayerType) => {
     const { actions } = useRadioStore();
     const currentStreamUrl = useRadioStore((state) => state.currentStreamUrl);
     const isPlaying = useRadioStore((state) => state.isPlaying);
-    const playbackType = usePlaybackType();
+    const playbackKey = useRadioPlaybackKey();
     const isUsingMpv = playbackType === PlayerType.LOCAL && mpvPlayer;
 
     // Handle mpv playback
@@ -171,11 +191,18 @@ export const useRadioAudioInstance = () => {
         }
 
         if (currentStreamUrl) {
-            mpvPlayer.setQueue({ kind: 'radio', url: currentStreamUrl }, undefined, !isPlaying);
+            if (!playbackKey) {
+                return;
+            }
+            mpvPlayer.setQueue(
+                { kind: 'radio', playbackKey, url: currentStreamUrl },
+                undefined,
+                !isPlaying,
+            );
         } else {
             mpvPlayer.pause();
         }
-    }, [currentStreamUrl, isPlaying, isUsingMpv]);
+    }, [currentStreamUrl, isPlaying, isUsingMpv, playbackKey]);
 
     usePlayerEvents(
         {
@@ -211,10 +238,9 @@ export const useRadioAudioInstance = () => {
     );
 };
 
-export const useRadioMetadata = () => {
+export const useRadioMetadata = (playbackType: PlaybackPolicyPlayerType) => {
     const { actions, currentStreamUrl } = useRadioStore();
     const { setMetadata } = actions;
-    const playbackType = usePlaybackType();
     const isUsingMpv = playbackType === PlayerType.LOCAL && mpvPlayer;
 
     useEffect(() => {
@@ -297,32 +323,40 @@ export const useRadioMetadata = () => {
     }, [currentStreamUrl, setMetadata, isUsingMpv]);
 };
 
-const RadioAudioInstanceHookInner = () => {
-    useRadioAudioInstance();
+const RadioAudioInstanceHookInner = ({
+    playbackType,
+}: {
+    playbackType: PlaybackPolicyPlayerType;
+}) => {
+    useRadioAudioInstance(playbackType);
     return null;
 };
 
-export const RadioAudioInstanceHook = () => {
+export const RadioAudioInstanceHook = ({
+    playbackType,
+}: {
+    playbackType: PlaybackPolicyPlayerType;
+}) => {
     const isRadioActive = useIsRadioActive();
 
     if (!isRadioActive) {
         return null;
     }
 
-    return React.createElement(RadioAudioInstanceHookInner);
+    return React.createElement(RadioAudioInstanceHookInner, { playbackType });
 };
 
-const RadioMetadataHookInner = () => {
-    useRadioMetadata();
+const RadioMetadataHookInner = ({ playbackType }: { playbackType: PlaybackPolicyPlayerType }) => {
+    useRadioMetadata(playbackType);
     return null;
 };
 
-export const RadioMetadataHook = () => {
+export const RadioMetadataHook = ({ playbackType }: { playbackType: PlaybackPolicyPlayerType }) => {
     const isRadioActive = useIsRadioActive();
 
     if (!isRadioActive) {
         return null;
     }
 
-    return React.createElement(RadioMetadataHookInner);
+    return React.createElement(RadioMetadataHookInner, { playbackType });
 };

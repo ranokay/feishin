@@ -12,7 +12,11 @@ import {
     OBSERVED_AUDIO_PROPERTIES,
     parseAoLogEvent,
 } from '../src/main/features/core/player/mpv/audio-state';
-import { BIT_PERFECT_PROPERTY_PINS } from '../src/shared/signalpath';
+import {
+    BIT_PERFECT_PROPERTY_PINS,
+    isMpvPlaybackKeyQueued,
+    resolveMpvPlaybackKey,
+} from '../src/shared/signalpath';
 
 interface StubConnection extends AudioStateConnection {
     emit(eventName: string, payload: Record<string, unknown>): void;
@@ -53,12 +57,25 @@ describe('observed audio property set', () => {
             'demuxer-cache-state',
             'gapless-audio',
             'mute',
+            'playlist',
             'playlist-pos',
             'replaygain',
             'speed',
             'track-list',
             'volume',
         ]);
+    });
+});
+
+describe('resolveMpvPlaybackKey', () => {
+    it('preserves the identity of local radio sources', () => {
+        const sources = [
+            { kind: 'radio' as const, playbackKey: 'radio-1', url: 'https://radio/stream' },
+        ];
+
+        expect(resolveMpvPlaybackKey(sources, 'https://radio/stream', 0)).toBe('radio-1');
+        expect(isMpvPlaybackKeyQueued(sources, 'radio-1')).toBe(true);
+        expect(isMpvPlaybackKeyQueued(sources, 'old-library-song')).toBe(false);
     });
 });
 
@@ -950,6 +967,92 @@ describe('AudioStateService server-route verification', () => {
         service.dispose();
     });
 
+    it('discards an in-flight result after playback advances to another track', async () => {
+        const connection = createStubConnection();
+        let resolveProbe: ((probe: null | StreamHeaderProbe) => void) | undefined;
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: () =>
+                new Promise((resolve) => {
+                    resolveProbe = resolve;
+                }),
+            resolvePlaybackKey: (_path, position) => ['song-1', 'song-2'][position] ?? null,
+        });
+        await service.start();
+        connection.emit('property-change', {
+            data: [
+                { filename: 'https://x/first', id: 10 },
+                { filename: 'https://x/second', id: 11 },
+            ],
+            event: 'property-change',
+            name: 'playlist',
+        });
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 10 });
+
+        service.requestServerVerification(
+            { declaration: FLAC_DECLARATION, url: 'https://x/first' },
+            'song-1',
+        );
+        await flushMicrotasks();
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 11 });
+        resolveProbe?.({
+            acceptRanges: null,
+            contentLength: null,
+            contentType: 'audio/mpeg',
+        });
+        await flushMicrotasks();
+
+        expect(service.getSnapshot()).toMatchObject({
+            playbackKey: 'song-2',
+            serverRoute: null,
+            streamUrl: null,
+        });
+        expect(service.getEvents().some((event) => event.type === 'transcode-detected')).toBe(
+            false,
+        );
+        service.dispose();
+    });
+
+    it('applies an early probe result once its track starts', async () => {
+        const connection = createStubConnection();
+        let resolveProbe: ((probe: null | StreamHeaderProbe) => void) | undefined;
+        const service = new AudioStateService(connection, {
+            probeStreamHeaders: () =>
+                new Promise((resolve) => {
+                    resolveProbe = resolve;
+                }),
+            resolvePlaybackKey: (_path, position) => ['song-1', 'song-2'][position] ?? null,
+        });
+        await service.start();
+        connection.emit('property-change', {
+            data: [
+                { filename: 'https://x/first', id: 10 },
+                { filename: 'https://x/second', id: 11 },
+            ],
+            event: 'property-change',
+            name: 'playlist',
+        });
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 10 });
+
+        service.requestServerVerification(
+            { declaration: FLAC_DECLARATION, url: 'https://x/second' },
+            'song-2',
+        );
+        await flushMicrotasks();
+        resolveProbe?.({
+            acceptRanges: null,
+            contentLength: null,
+            contentType: 'audio/mpeg',
+        });
+        await flushMicrotasks();
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 11 });
+
+        expect(service.getSnapshot()).toMatchObject({
+            playbackKey: 'song-2',
+            serverRoute: expect.objectContaining({ route: 'transcoded' }),
+        });
+        service.dispose();
+    });
+
     it('degrades to unverified absence when the probe fails', async () => {
         const connection = createStubConnection();
         const service = new AudioStateService(connection, {
@@ -989,10 +1092,24 @@ describe('AudioStateService server-route verification', () => {
 
     it('classifies hog-mode contention into a typed error and notifies', async () => {
         const connection = createStubConnection();
+        const broadcast = vi.fn();
         const onEngineError = vi.fn();
-        const service = new AudioStateService(connection, { onEngineError });
+        const service = new AudioStateService(connection, {
+            broadcast,
+            onEngineError,
+            resolvePlaybackKey: (_path, position) => ['song-1', 'song-2'][position] ?? null,
+        });
         await service.start();
 
+        connection.emit('property-change', {
+            data: [
+                { filename: 'https://x/first', id: 10 },
+                { filename: 'https://x/second', id: 11 },
+            ],
+            event: 'property-change',
+            name: 'playlist',
+        });
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 10 });
         connection.emit('log-message', {
             event: 'log-message',
             prefix: 'ao/coreaudio',
@@ -1006,7 +1123,45 @@ describe('AudioStateService server-route verification', () => {
         expect(errorEvent?.detail).toContain('exclusive-contention');
         expect(onEngineError).toHaveBeenCalledWith(
             expect.objectContaining({ cause: 'exclusive-contention' }),
+            'song-1',
         );
+        expect(broadcast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                lastError: expect.objectContaining({ cause: 'exclusive-contention' }),
+                playbackKey: 'song-1',
+            }),
+        );
+
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 11 });
+        expect(service.getSnapshot().playbackKey).toBe('song-2');
+        service.dispose();
+    });
+
+    it('recovers the active playback key when playlist mapping arrives late', async () => {
+        const connection = createStubConnection();
+        const onEngineError = vi.fn();
+        const service = new AudioStateService(connection, {
+            onEngineError,
+            resolvePlaybackKey: () => 'song-1',
+        });
+        await service.start();
+
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 10 });
+        expect(service.getSnapshot().playbackKey).toBeNull();
+
+        connection.emit('property-change', {
+            data: [{ filename: 'https://x/first', id: 10 }],
+            event: 'property-change',
+            name: 'playlist',
+        });
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio',
+            text: 'failed to set hogmode: -536870196',
+        });
+
+        expect(service.getSnapshot().playbackKey).toBe('song-1');
+        expect(onEngineError).toHaveBeenCalledWith(expect.any(Object), 'song-1');
         service.dispose();
     });
 

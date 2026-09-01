@@ -1,23 +1,46 @@
-import type { AudioSnapshot } from '/@/shared/signalpath';
+import type { AudioSnapshot, RetainedStrictPlaybackStopState } from '/@/shared/signalpath';
 
 import isElectron from 'is-electron';
 import { shallow } from 'zustand/shallow';
 import { createWithEqualityFn } from 'zustand/traditional';
 
 import { logger } from '/@/renderer/utils/logger';
+import { retainStrictPlaybackStopState } from '/@/shared/signalpath';
 
 interface AudioStateActions {
+    clearStrictPlaybackStop: () => void;
     setSnapshot: (snapshot: AudioSnapshot) => void;
+    syncPlaybackKey: (playbackKey: null | string) => void;
 }
 
 interface AudioStateState {
     snapshot: AudioSnapshot | null;
+    strictPlaybackStop: null | RetainedStrictPlaybackStopState;
 }
 
 export const useAudioStateStore = createWithEqualityFn<AudioStateActions & AudioStateState>()(
     (set) => ({
-        setSnapshot: (snapshot) => set({ snapshot }),
+        clearStrictPlaybackStop: () =>
+            set((state) =>
+                state.strictPlaybackStop === null ? state : { strictPlaybackStop: null },
+            ),
+        setSnapshot: (snapshot) =>
+            set((state) => ({
+                snapshot,
+                strictPlaybackStop: retainStrictPlaybackStopState(
+                    state.strictPlaybackStop,
+                    snapshot,
+                ),
+            })),
         snapshot: null,
+        strictPlaybackStop: null,
+        syncPlaybackKey: (playbackKey) =>
+            set((state) =>
+                state.strictPlaybackStop === null ||
+                state.strictPlaybackStop.playbackKey === playbackKey
+                    ? state
+                    : { strictPlaybackStop: null },
+            ),
     }),
 );
 
@@ -52,4 +75,8 @@ const selectStableSnapshot = (snapshot: AudioSnapshot | null): AudioSnapshot | n
 
 export const useAudioSnapshot = (): AudioSnapshot | null => {
     return useAudioStateStore((state) => selectStableSnapshot(state.snapshot), shallow);
+};
+
+export const useRetainedStrictPlaybackStop = (): null | RetainedStrictPlaybackStopState => {
+    return useAudioStateStore((state) => state.strictPlaybackStop);
 };

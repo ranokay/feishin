@@ -14,8 +14,8 @@ export interface DemuxerObservation {
 
 /** Tagged queue input keeps radio streams separate from verifiable library tracks. */
 export type MpvLoadSource =
-    | (ServerVerificationRequest & { kind: 'library' })
-    | { kind: 'radio'; url: string };
+    | (ServerVerificationRequest & { kind: 'library'; playbackKey: string })
+    | { kind: 'radio'; playbackKey: string; url: string };
 
 export interface ServerRouteEvidence {
     /** Human-readable mismatch reasons; null when no contradiction was found. */
@@ -44,6 +44,26 @@ export interface StreamHeaderProbe {
     /** Full-entity byte length when derivable (Content-Length or Content-Range total). */
     contentLength: null | number;
     contentType: null | string;
+}
+
+export function isMpvPlaybackKeyQueued(
+    sources: readonly (MpvLoadSource | undefined)[],
+    playbackKey: null | string,
+): boolean {
+    return playbackKey === null || sources.some((source) => source?.playbackKey === playbackKey);
+}
+
+export function resolveMpvPlaybackKey(
+    sources: readonly (MpvLoadSource | undefined)[],
+    path: string,
+    position: number,
+): null | string {
+    const positioned = sources[position];
+    const source =
+        positioned?.url === path
+            ? positioned
+            : sources.find((candidate) => candidate?.url === path);
+    return source?.playbackKey ?? null;
 }
 
 // Servers label the same container differently across backends; both directions

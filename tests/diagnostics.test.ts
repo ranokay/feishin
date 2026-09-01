@@ -28,6 +28,7 @@ function baseSnapshot(overrides: Partial<AudioSnapshot> = {}): AudioSnapshot {
         muted: false,
         outputParams: { channels: 2, format: 's32', samplerate: 44100 },
         physicalFormat: { level: 'inferred', source: 'mpv-log', value: '44100 Hz 2ch' },
+        playbackKey: 'song-1',
         playlistPos: 3,
         sequence: 9,
         serverRoute: {

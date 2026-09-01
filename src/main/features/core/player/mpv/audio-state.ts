@@ -38,6 +38,7 @@ export const OBSERVED_AUDIO_PROPERTIES = [
     'demuxer-cache-state',
     'gapless-audio',
     'mute',
+    'playlist',
     'playlist-pos',
     'replaygain',
     'speed',
@@ -62,11 +63,13 @@ export interface AudioStateServiceOptions {
     /** Process logger injection; the module itself stays import-safe outside electron. */
     log?: { debug: (message: string) => void; warn: (message: string, error?: unknown) => void };
     /** Typed engine failures (exclusive contention etc.) for immediate surfacing. */
-    onEngineError?: (failure: AudioEngineFailure) => void;
+    onEngineError?: (failure: AudioEngineFailure, playbackKey: null | string) => void;
     /** Injectable stream-header probe; verification stays off when absent. */
     probeStreamHeaders?: (url: string) => Promise<null | StreamHeaderProbe>;
     /** Command-owner callback. The observation connection remains read-only. */
     repairStrictProperty?: (pin: StrictPropertyPin) => Promise<void>;
+    /** Resolves an mpv playlist entry to the renderer queue item that supplied it. */
+    resolvePlaybackKey?: (path: string, position: number) => null | string;
     strictPropertyPins?: readonly StrictPropertyPin[];
 }
 
@@ -84,6 +87,7 @@ export interface ObservedAudioState {
     muted: boolean | null;
     outputParams: DecodedParams | null;
     physicalFormat: Evidence<string> | null;
+    playbackKey: null | string;
     playlistPos: null | number;
     rawFilters: null | string;
     serverRoute: null | ServerRouteEvidence;
@@ -211,6 +215,7 @@ export function createObservedAudioState(): ObservedAudioState {
         muted: null,
         outputParams: null,
         physicalFormat: null,
+        playbackKey: null,
         playlistPos: null,
         rawFilters: null,
         serverRoute: null,
@@ -237,6 +242,7 @@ export function deriveSnapshot(state: ObservedAudioState, sequence: number): Aud
         muted: state.muted,
         outputParams: state.outputParams,
         physicalFormat: state.physicalFormat,
+        playbackKey: state.playbackKey,
         playlistPos: state.playlistPos,
         sequence,
         serverRoute: state.serverRoute,
@@ -295,11 +301,14 @@ interface LastServerVerification {
     demuxerApplied: boolean;
     generation: number;
     headers: null | StreamHeaderProbe;
+    /** Queue identity that requested this verification. */
+    playbackKey: null | string;
     /** Redacted URL of the request; restored when start-file raced the probe. */
     streamUrl: string;
 }
 
 export class AudioStateService {
+    private activePlaylistEntryId: null | number = null;
     private broadcastTimer: NodeJS.Timeout | null = null;
     private readonly connection: AudioStateConnection;
     private disposers: Array<() => void> = [];
@@ -315,18 +324,23 @@ export class AudioStateService {
     };
     private nextEventId = 1;
     private readonly onBroadcast: (snapshot: AudioSnapshot) => void;
-    private readonly onEngineError: ((failure: AudioEngineFailure) => void) | null;
+    private readonly onEngineError:
+        | ((failure: AudioEngineFailure, playbackKey: null | string) => void)
+        | null;
+    private readonly playbackKeysByEntryId = new Map<number, string>();
     private readonly probeStreamHeaders:
         | ((url: string) => Promise<null | StreamHeaderProbe>)
         | null;
     private readonly repairingStrictProperties = new Set<string>();
     private readonly repairStrictProperty: ((pin: StrictPropertyPin) => Promise<void>) | null;
+    private readonly resolvePlaybackKey: ((path: string, position: number) => null | string) | null;
     private readonly state = createObservedAudioState();
     private stopped = false;
     private readonly strictPropertyPins = new Map<string, StrictPropertyPin>();
     private readonly strictRepairAttempts = new Map<string, number>();
     private readonly strictRepairTimers = new Map<string, NodeJS.Timeout>();
     private verificationGeneration = 0;
+    private verificationPlaybackKey: null | string = null;
 
     constructor(connection: AudioStateConnection, options: AudioStateServiceOptions = {}) {
         this.connection = connection;
@@ -337,6 +351,7 @@ export class AudioStateService {
         this.onEngineError = options.onEngineError ?? null;
         this.probeStreamHeaders = options.probeStreamHeaders ?? null;
         this.repairStrictProperty = options.repairStrictProperty ?? null;
+        this.resolvePlaybackKey = options.resolvePlaybackKey ?? null;
         for (const pin of options.strictPropertyPins ?? []) {
             this.strictPropertyPins.set(pin.name, pin);
         }
@@ -353,6 +368,7 @@ export class AudioStateService {
         }
         this.strictRepairTimers.clear();
         this.lastVerification = null;
+        this.playbackKeysByEntryId.clear();
         for (const dispose of this.disposers.splice(0)) {
             dispose();
         }
@@ -373,20 +389,27 @@ export class AudioStateService {
      * and cross-checks them against the library declaration plus demuxer facts.
      * Failures degrade to absent evidence, never to a claimed verdict.
      */
-    requestServerVerification(request: ServerVerificationRequest): void {
+    requestServerVerification(
+        request: ServerVerificationRequest,
+        playbackKey: null | string = this.state.playbackKey,
+    ): void {
         if (this.stopped || !this.probeStreamHeaders) {
             return;
         }
         const generation = ++this.verificationGeneration;
+        this.verificationPlaybackKey = playbackKey;
+        this.lastVerification = null;
         // Stale evidence from the previous track must not survive the new
         // request - demuxer facts included, otherwise a fast probe would pair
         // the previous track's codec/rate with this track's headers.
-        this.state.serverRoute = null;
-        this.state.demuxer = null;
         // Kept for the Stream Inspector, redacted: stream URLs carry credentials.
         const streamUrl = redactStreamUrl(request.url);
-        this.state.streamUrl = streamUrl;
-        this.scheduleBroadcast();
+        if (playbackKey === this.state.playbackKey) {
+            this.state.serverRoute = null;
+            this.state.demuxer = null;
+            this.state.streamUrl = streamUrl;
+            this.scheduleBroadcast();
+        }
         const probe = this.probeStreamHeaders;
 
         void Promise.resolve()
@@ -408,6 +431,7 @@ export class AudioStateService {
                     demuxerApplied: this.state.demuxer !== null,
                     generation,
                     headers,
+                    playbackKey,
                     streamUrl,
                 };
                 this.applyServerVerification();
@@ -422,6 +446,9 @@ export class AudioStateService {
             const name = payload['name'];
             if (typeof name !== 'string') {
                 return;
+            }
+            if (name === 'playlist') {
+                this.updatePlaybackKeys(payload['data']);
             }
             for (const event of applyPropertyValue(this.state, name, payload['data'])) {
                 this.record(event);
@@ -473,15 +500,21 @@ export class AudioStateService {
             this.state.physicalFormat = null;
             this.record({ detail: 'device renegotiation', type: 'ao-transition' });
         });
-        this.subscribe('start-file', () => {
+        this.subscribe('start-file', (payload) => {
             // Stale route evidence, URLs, and errors must not bleed into the
             // new track. A newer request in flight re-populates them.
+            const playlistEntryId = payload['playlist_entry_id'];
+            this.activePlaylistEntryId =
+                typeof playlistEntryId === 'number' ? playlistEntryId : null;
+            this.state.playbackKey =
+                this.activePlaylistEntryId !== null
+                    ? (this.playbackKeysByEntryId.get(this.activePlaylistEntryId) ?? null)
+                    : null;
             this.state.serverRoute = null;
             this.state.streamUrl = null;
             this.state.lastError = null;
-            if (this.lastVerification) {
-                this.lastVerification.demuxerApplied = true;
-            }
+            this.state.demuxer = null;
+            this.reconcileVerificationWithPlayback();
             this.record({ detail: null, type: 'track-started' });
         });
         this.subscribe('end-file', (payload) => {
@@ -532,6 +565,10 @@ export class AudioStateService {
             return;
         }
         if (this.stopped || verification.generation !== this.verificationGeneration) {
+            return;
+        }
+        if (verification.playbackKey !== this.state.playbackKey) {
+            verification.demuxerApplied = true;
             return;
         }
         const evidence = evaluateServerRoute({
@@ -600,11 +637,16 @@ export class AudioStateService {
     private handleEngineFailure(failure: AudioEngineFailure): void {
         this.state.lastError = failure;
         this.log.warn(`Audio engine error (${failure.cause}): ${failure.explanation}`);
-        this.record({
+        this.pushEvent({
             detail: `${failure.cause}: ${failure.explanation}`,
             type: 'engine-error',
         });
-        this.onEngineError?.(failure);
+        this.onEngineError?.(failure, this.state.playbackKey);
+        if (this.broadcastTimer) {
+            clearTimeout(this.broadcastTimer);
+            this.broadcastTimer = null;
+        }
+        this.emitSnapshot();
     }
 
     private pushEvent(event: PendingAudioEngineEvent): void {
@@ -612,6 +654,24 @@ export class AudioStateService {
         this.nextEventId += 1;
         if (this.events.length > this.eventLimit) {
             this.events.splice(0, this.events.length - this.eventLimit);
+        }
+    }
+
+    private reconcileVerificationWithPlayback(): void {
+        if (this.state.playbackKey === null) {
+            // Playlist observation may arrive after start-file. Keep a keyed
+            // request pending until that mapping either confirms or rejects it.
+            return;
+        }
+        if (this.verificationPlaybackKey !== this.state.playbackKey) {
+            this.verificationGeneration += 1;
+            this.verificationPlaybackKey = null;
+            this.lastVerification = null;
+            return;
+        }
+        if (this.lastVerification?.playbackKey === this.state.playbackKey) {
+            this.lastVerification.demuxerApplied = false;
+            this.applyServerVerification();
         }
     }
 
@@ -771,6 +831,37 @@ export class AudioStateService {
 
     private subscribe(eventName: string, handler: MpvEventHandler): void {
         this.disposers.push(this.connection.onEvent(eventName, handler));
+    }
+
+    private updatePlaybackKeys(value: unknown): void {
+        if (!Array.isArray(value) || !this.resolvePlaybackKey) {
+            return;
+        }
+        const nextKeys = new Map<number, string>();
+        for (const [position, candidate] of value.entries()) {
+            if (!isRecord(candidate)) {
+                continue;
+            }
+            const entryId = candidate['id'];
+            const path = candidate['filename'];
+            if (typeof entryId !== 'number' || typeof path !== 'string') {
+                continue;
+            }
+            const playbackKey =
+                this.resolvePlaybackKey(path, position) ?? this.playbackKeysByEntryId.get(entryId);
+            if (playbackKey) {
+                nextKeys.set(entryId, playbackKey);
+            }
+        }
+        this.playbackKeysByEntryId.clear();
+        for (const [entryId, playbackKey] of nextKeys) {
+            this.playbackKeysByEntryId.set(entryId, playbackKey);
+        }
+        if (this.state.playbackKey === null && this.activePlaylistEntryId !== null) {
+            this.state.playbackKey =
+                this.playbackKeysByEntryId.get(this.activePlaylistEntryId) ?? null;
+            this.reconcileVerificationWithPlayback();
+        }
     }
 }
 

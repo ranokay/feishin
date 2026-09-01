@@ -22,8 +22,12 @@ import {
     type AudioEngineEvent,
     type AudioSnapshot,
     BIT_PERFECT_PROPERTY_PINS,
+    isMpvPlaybackKeyQueued,
     type MpvLoadSource,
     type PlaybackPolicy,
+    resolveMpvPlaybackKey,
+    resolveStrictPlaybackStop,
+    type StrictPlaybackStop,
 } from '/@/shared/signalpath';
 import { PlayerData } from '/@/shared/types/domain-types';
 
@@ -53,7 +57,7 @@ let audioStateGeneration = 0;
 const verifyCurrentQueuedStream = () => {
     const current = queuedStreams[0];
     if (current?.kind === 'library') {
-        audioStateService?.requestServerVerification(current);
+        audioStateService?.requestServerVerification(current, current.playbackKey);
     }
 };
 
@@ -81,15 +85,48 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
     try {
         const commandMpv = getMpvInstance();
         const connection = await MpvIpcConnection.connect(socketPath);
+        let activeStrictStopKey: null | string = null;
+        const pauseForStrictStop = (
+            stop: StrictPlaybackStop,
+            playbackKey: null | string,
+            force = false,
+        ) => {
+            const key = `${playbackKey ?? 'unknown'}:${stop.cause}:${stop.detail ?? ''}`;
+            if (!force && activeStrictStopKey === key) {
+                return;
+            }
+            activeStrictStopKey = key;
+            if (!commandMpv) {
+                return;
+            }
+            void commandMpv.pause().catch((error) => {
+                if (activeStrictStopKey === key) {
+                    activeStrictStopKey = null;
+                }
+                log.warn('Failed to stop strict playback', error);
+            });
+        };
         const service = new AudioStateService(connection, {
             broadcast: (snapshot) => {
                 if (generation === audioStateGeneration) {
+                    const strictStop = resolveStrictPlaybackStop(playbackPolicy, 'local', snapshot);
+                    if (strictStop && isMpvPlaybackKeyQueued(queuedStreams, snapshot.playbackKey)) {
+                        pauseForStrictStop(strictStop, snapshot.playbackKey);
+                    } else {
+                        activeStrictStopKey = null;
+                    }
                     getMainWindow()?.webContents.send('renderer-audio-state-changed', snapshot);
                 }
             },
             log,
-            onEngineError: (failure) => {
+            onEngineError: (failure, playbackKey) => {
                 if (generation !== audioStateGeneration) {
+                    return;
+                }
+                if (playbackPolicy === 'bit-perfect') {
+                    if (isMpvPlaybackKeyQueued(queuedStreams, playbackKey)) {
+                        pauseForStrictStop(failure, playbackKey, true);
+                    }
                     return;
                 }
                 sendToastToRenderer({
@@ -109,6 +146,8 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
                           await commandMpv.setProperty(pin.name, pin.value);
                       }
                     : undefined,
+            resolvePlaybackKey: (path, position) =>
+                resolveMpvPlaybackKey(queuedStreams, path, position),
             strictPropertyPins:
                 playbackPolicy === 'bit-perfect' ? BIT_PERFECT_PROPERTY_PINS : undefined,
         });

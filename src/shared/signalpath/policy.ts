@@ -1,15 +1,79 @@
 import { BIT_PERFECT_PROPERTY_PINS, strictPropertyRecord } from './strict-properties';
 
 export const PLAYBACK_POLICIES = ['standard', 'exclusive', 'bit-perfect'] as const;
+export const BIT_PERFECT_MUTE_BEHAVIORS = ['pause', 'gain-mute'] as const;
+export const BIT_PERFECT_EFFECTIVE_VOLUME = 100;
+
+export type BitPerfectMuteBehavior = (typeof BIT_PERFECT_MUTE_BEHAVIORS)[number];
 
 export type Platform = 'darwin' | 'linux' | 'win32';
-
+export type PlaybackControl = 'mute' | 'speed' | 'volume';
+export type PlaybackControlAction =
+    | 'apply'
+    | 'block'
+    | 'pause'
+    | 'pause-and-unmute'
+    | 'play'
+    | 'toggle-mute';
+export type PlaybackControlStatus = 'paused' | 'playing' | 'stopped';
 export type PlaybackPolicy = (typeof PLAYBACK_POLICIES)[number];
+export type PlaybackPolicyPlayerType = 'jukebox' | 'local' | 'web';
+
+export function isBitPerfectPlaybackActive(
+    policy: PlaybackPolicy,
+    playerType: PlaybackPolicyPlayerType,
+): boolean {
+    return policy === 'bit-perfect' && playerType === 'local';
+}
+
+export function normalizeBitPerfectMuteBehavior(value: unknown): BitPerfectMuteBehavior {
+    return BIT_PERFECT_MUTE_BEHAVIORS.includes(value as BitPerfectMuteBehavior)
+        ? (value as BitPerfectMuteBehavior)
+        : 'pause';
+}
 
 export function normalizePlaybackPolicy(value: unknown): PlaybackPolicy {
     return PLAYBACK_POLICIES.includes(value as PlaybackPolicy)
         ? (value as PlaybackPolicy)
         : 'standard';
+}
+
+export function resolveEffectivePlaybackVolume(
+    policy: PlaybackPolicy,
+    playerType: PlaybackPolicyPlayerType,
+    storedVolume: number,
+): number {
+    return isBitPerfectPlaybackActive(policy, playerType)
+        ? BIT_PERFECT_EFFECTIVE_VOLUME
+        : storedVolume;
+}
+
+export function resolvePlaybackControlAction(
+    policy: PlaybackPolicy,
+    muteBehavior: BitPerfectMuteBehavior,
+    control: PlaybackControl,
+    status: PlaybackControlStatus,
+    muted = false,
+): PlaybackControlAction {
+    if (policy !== 'bit-perfect') {
+        return control === 'mute' ? 'toggle-mute' : 'apply';
+    }
+    if (control !== 'mute') {
+        return 'block';
+    }
+    if (muteBehavior === 'gain-mute') {
+        return 'toggle-mute';
+    }
+    if (muted) {
+        return 'pause-and-unmute';
+    }
+    if (status === 'playing') {
+        return 'pause';
+    }
+    if (status === 'paused') {
+        return 'play';
+    }
+    return 'block';
 }
 
 const PLATFORM_AO_PIN: Partial<Record<Platform, string>> = {

@@ -40,6 +40,8 @@ import { Select } from '/@/shared/components/select/select';
 import { Slider } from '/@/shared/components/slider/slider';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
+import { Tooltip } from '/@/shared/components/tooltip/tooltip';
+import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
 import { CrossfadeStyle, PlayerStatus, PlayerStyle, PlayerType } from '/@/shared/types/types';
 
 const ipc = isElectron() ? window.api.ipc : null;
@@ -426,9 +428,13 @@ const CrossfadeDurationConfig = () => {
 };
 
 export const PlaybackSpeedSlider = () => {
+    const { t } = useTranslation();
     const speed = usePlayerSpeed();
     const { setSpeed } = usePlayerActions();
+    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
     const { bpm } = usePlayerSongProperties(['bpm']) ?? {};
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
+    const displayedSpeed = isBitPerfect ? 1 : speed;
 
     const formatPlaybackSpeedSliderLabel = useMemo(
         () => (value: number) => {
@@ -442,32 +448,41 @@ export const PlaybackSpeedSlider = () => {
     );
 
     return (
-        <Slider
-            label={formatPlaybackSpeedSliderLabel}
-            marks={[
-                { label: '0.5', value: 0.5 },
-                { label: '0.75', value: 0.75 },
-                { label: '1', value: 1 },
-                { label: '1.25', value: 1.25 },
-                { label: '1.5', value: 1.5 },
-                { label: '1.75', value: 1.75 },
-                { label: '2', value: 2 },
-            ]}
-            max={2}
-            min={0.5}
-            onChange={setSpeed}
-            onDoubleClick={() => setSpeed(1)}
-            step={0.01}
-            value={speed}
-            w="320px"
-        />
+        <Tooltip disabled={!isBitPerfect} label={t('player.bitPerfectSpeedLocked')} openDelay={0}>
+            <div>
+                <Slider
+                    disabled={isBitPerfect}
+                    label={formatPlaybackSpeedSliderLabel}
+                    marks={[
+                        { label: '0.5', value: 0.5 },
+                        { label: '0.75', value: 0.75 },
+                        { label: '1', value: 1 },
+                        { label: '1.25', value: 1.25 },
+                        { label: '1.5', value: 1.5 },
+                        { label: '1.75', value: 1.75 },
+                        { label: '2', value: 2 },
+                    ]}
+                    max={2}
+                    min={0.5}
+                    onChange={setSpeed}
+                    onDoubleClick={() => setSpeed(1)}
+                    step={0.01}
+                    value={displayedSpeed}
+                    w="320px"
+                />
+            </div>
+        </Tooltip>
     );
 };
 
 export const PitchControls = () => {
+    const { t } = useTranslation();
     const microtonal = useMicrotonalPitchControls();
     const speed = usePlayerSpeed();
     const { setSpeed } = usePlayerActions();
+    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
+    const displayedSpeed = isBitPerfect ? 1 : speed;
 
     const speedToPitch = (speed: number) => {
         return 12 * Math.log2(speed);
@@ -484,52 +499,58 @@ export const PitchControls = () => {
     };
 
     return (
-        <Group gap={microtonal ? 'xs' : 'md'} my="md" w="100%" wrap="nowrap">
-            <Button
-                aria-label="-1 semitone"
-                fullWidth
-                fw={400}
-                onClick={() => adjustMusicalSpeed(-1)}
-                size="compact-xs"
-            >
-                -1st
-            </Button>
-            {microtonal && (
+        <Tooltip disabled={!isBitPerfect} label={t('player.bitPerfectSpeedLocked')} openDelay={0}>
+            <Group gap={microtonal ? 'xs' : 'md'} my="md" w="100%" wrap="nowrap">
                 <Button
-                    aria-label="-10 cents"
+                    aria-label="-1 semitone"
+                    disabled={isBitPerfect}
                     fullWidth
                     fw={400}
-                    onClick={() => adjustMusicalSpeed(-0.1)}
+                    onClick={() => adjustMusicalSpeed(-1)}
                     size="compact-xs"
                 >
-                    -10ct
+                    -1st
                 </Button>
-            )}
-            <Text size="sm" style={{ fontFamily: 'monospace' }} ta="center">
-                {speed.toFixed(2)}x {speedToPitch(speed) > 0 && '+'}
-                {speedToPitch(speed) == 0 && '±'}
-                {speedToPitch(speed).toFixed(2)}st
-            </Text>
-            {microtonal && (
+                {microtonal && (
+                    <Button
+                        aria-label="-10 cents"
+                        disabled={isBitPerfect}
+                        fullWidth
+                        fw={400}
+                        onClick={() => adjustMusicalSpeed(-0.1)}
+                        size="compact-xs"
+                    >
+                        -10ct
+                    </Button>
+                )}
+                <Text size="sm" style={{ fontFamily: 'monospace' }} ta="center">
+                    {displayedSpeed.toFixed(2)}x {speedToPitch(displayedSpeed) > 0 && '+'}
+                    {speedToPitch(displayedSpeed) == 0 && '±'}
+                    {speedToPitch(displayedSpeed).toFixed(2)}st
+                </Text>
+                {microtonal && (
+                    <Button
+                        aria-label="+10 cents"
+                        disabled={isBitPerfect}
+                        fullWidth
+                        fw={400}
+                        onClick={() => adjustMusicalSpeed(0.1)}
+                        size="compact-xs"
+                    >
+                        +10ct
+                    </Button>
+                )}
                 <Button
-                    aria-label="+10 cents"
+                    aria-label="+1 semitone"
+                    disabled={isBitPerfect}
                     fullWidth
                     fw={400}
-                    onClick={() => adjustMusicalSpeed(0.1)}
+                    onClick={() => adjustMusicalSpeed(1)}
                     size="compact-xs"
                 >
-                    +10ct
+                    +1st
                 </Button>
-            )}
-            <Button
-                aria-label="+1 semitone"
-                fullWidth
-                fw={400}
-                onClick={() => adjustMusicalSpeed(1)}
-                size="compact-xs"
-            >
-                +1st
-            </Button>
-        </Group>
+            </Group>
+        </Tooltip>
     );
 };

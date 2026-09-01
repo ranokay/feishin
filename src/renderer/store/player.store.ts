@@ -16,6 +16,11 @@ import {
 } from '/@/renderer/store/timestamp.store';
 import { migratePlayerStorePersist, playerStoreStorage } from '/@/renderer/store/utils';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
+import {
+    BIT_PERFECT_EFFECTIVE_VOLUME,
+    isBitPerfectPlaybackActive,
+    resolvePlaybackControlAction,
+} from '/@/shared/signalpath';
 import { PlayerData, QueueData, QueueSong, Song } from '/@/shared/types/domain-types';
 import {
     CrossfadeStyle,
@@ -72,7 +77,7 @@ interface Actions {
     setShuffle: (shuffle: PlayerShuffle) => void;
     setSpeed: (speed: number) => void;
     setTransitionType: (transitionType: PlayerStyle) => void;
-    setVolume: (volume: number) => void;
+    setVolume: (volume: number) => number;
     shuffle: () => void;
     shuffleAll: () => void;
     shuffleSelected: (items: QueueSong[]) => void;
@@ -331,6 +336,18 @@ function regenerateShuffledIndexesIfNeeded(state: {
     if (isShuffleEnabled(state)) {
         state.queue.shuffled = generateShuffledIndexes(state.queue.default.length);
     }
+}
+
+// Strict playback pins runtime values without overwriting the user's values for other policies.
+function shouldBlockPlaybackControl(control: 'speed' | 'volume', status: PlayerStatus): boolean {
+    const playback = useSettingsStore.getState().playback;
+    const policy = isBitPerfectPlaybackActive(playback.playbackPolicy, playback.type)
+        ? 'bit-perfect'
+        : 'standard';
+    return (
+        resolvePlaybackControlAction(policy, playback.bitPerfectMuteBehavior, control, status) ===
+        'block'
+    );
 }
 
 const initialState: State = {
@@ -768,6 +785,9 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     });
                 },
                 decreaseVolume: (value: number) => {
+                    if (shouldBlockPlaybackControl('volume', get().player.status)) {
+                        return;
+                    }
                     set((state) => {
                         state.player.volume = Math.max(0, state.player.volume - value);
                     });
@@ -908,6 +928,9 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     };
                 },
                 increaseVolume: (value: number) => {
+                    if (shouldBlockPlaybackControl('volume', get().player.status)) {
+                        return;
+                    }
                     set((state) => {
                         state.player.volume = Math.min(100, state.player.volume + value);
                     });
@@ -1343,8 +1366,34 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     emitPlayerStop(get, reset);
                 },
                 mediaToggleMute: () => {
+                    const playback = useSettingsStore.getState().playback;
+                    const policy = isBitPerfectPlaybackActive(
+                        playback.playbackPolicy,
+                        playback.type,
+                    )
+                        ? 'bit-perfect'
+                        : 'standard';
+                    const action = resolvePlaybackControlAction(
+                        policy,
+                        playback.bitPerfectMuteBehavior,
+                        'mute',
+                        get().player.status,
+                        get().player.muted,
+                    );
+
                     set((state) => {
-                        state.player.muted = !state.player.muted;
+                        if (action === 'toggle-mute') {
+                            state.player.muted = !state.player.muted;
+                        } else if (action === 'pause-and-unmute') {
+                            state.player.muted = false;
+                            if (state.player.status === PlayerStatus.PLAYING) {
+                                state.player.status = PlayerStatus.PAUSED;
+                            }
+                        } else if (action === 'pause') {
+                            state.player.status = PlayerStatus.PAUSED;
+                        } else if (action === 'play') {
+                            state.player.status = PlayerStatus.PLAYING;
+                        }
                     });
                 },
                 mediaTogglePlayPause: () => {
@@ -1557,6 +1606,9 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     });
                 },
                 setSpeed: (speed: number) => {
+                    if (shouldBlockPlaybackControl('speed', get().player.status)) {
+                        return;
+                    }
                     set((state) => {
                         const normalizedSpeed = Math.max(0.5, Math.min(2, speed));
                         state.player.speed = normalizedSpeed;
@@ -1568,9 +1620,13 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     });
                 },
                 setVolume: (volume: number) => {
+                    if (shouldBlockPlaybackControl('volume', get().player.status)) {
+                        return BIT_PERFECT_EFFECTIVE_VOLUME;
+                    }
                     set((state) => {
                         state.player.volume = volume;
                     });
+                    return get().player.volume;
                 },
                 shuffle: () => {
                     set((state) => {

@@ -25,12 +25,17 @@ export function useVisualizerSystemAudio(options: {
     const streamRef = useRef<MediaStream | null>(null);
     const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
     const connectInFlightRef = useRef(false);
+    const connectionGenerationRef = useRef(0);
+    const shouldAttemptConnectionRef = useRef(shouldAttemptConnection);
+    shouldAttemptConnectionRef.current = shouldAttemptConnection;
 
     useEffect(() => {
         webAudioRef.current = webAudio;
     }, [webAudio]);
 
     const disconnect = useCallback(() => {
+        connectionGenerationRef.current += 1;
+        connectInFlightRef.current = false;
         if (streamRef.current) {
             streamRef.current.getTracks().forEach((t) => t.stop());
             streamRef.current = null;
@@ -66,6 +71,8 @@ export function useVisualizerSystemAudio(options: {
         if (playbackType === PlayerType.WEB || !shouldAttemptConnection) {
             disconnect();
         }
+
+        return disconnect;
     }, [playbackType, shouldAttemptConnection, disconnect]);
 
     const connect = useCallback(async () => {
@@ -78,12 +85,21 @@ export function useVisualizerSystemAudio(options: {
 
         disconnect();
         connectInFlightRef.current = true;
+        const connectionGeneration = connectionGenerationRef.current;
+        const isConnectionStale = () =>
+            connectionGeneration !== connectionGenerationRef.current ||
+            !shouldAttemptConnectionRef.current;
 
         try {
             const stream = await navigator.mediaDevices.getDisplayMedia({
                 audio: true,
                 video: isMacOS, // On macOS, getDisplayMedia requires video to be requested in order to capture system audio
             });
+
+            if (isConnectionStale()) {
+                stream.getTracks().forEach((t) => t.stop());
+                return;
+            }
 
             const audioTracks = stream.getAudioTracks();
             if (audioTracks.length === 0) {
@@ -111,6 +127,11 @@ export function useVisualizerSystemAudio(options: {
                 // ignore
             }
 
+            if (isConnectionStale()) {
+                stream.getTracks().forEach((t) => t.stop());
+                return;
+            }
+
             const source = latest.context.createMediaStreamSource(stream);
             streamRef.current = stream;
             sourceRef.current = source;
@@ -120,6 +141,9 @@ export function useVisualizerSystemAudio(options: {
             webAudioRef.current = next;
             onSuccessRef.current?.();
         } catch (e) {
+            if (isConnectionStale()) {
+                return;
+            }
             const name = (e as DOMException)?.name;
             if (name === 'NotAllowedError' || name === 'AbortError') {
                 onDeniedRef.current?.();
@@ -131,7 +155,9 @@ export function useVisualizerSystemAudio(options: {
                 }),
             });
         } finally {
-            connectInFlightRef.current = false;
+            if (connectionGeneration === connectionGenerationRef.current) {
+                connectInFlightRef.current = false;
+            }
         }
     }, [disconnect, isMacOS, setWebAudio]);
 

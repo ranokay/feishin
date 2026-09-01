@@ -25,6 +25,7 @@ import { Stack } from '/@/shared/components/stack/stack';
 import { Switch } from '/@/shared/components/switch/switch';
 import { TextInput } from '/@/shared/components/text-input/text-input';
 import { Text } from '/@/shared/components/text/text';
+import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
 import { PlayerType } from '/@/shared/types/types';
 
 const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
@@ -107,10 +108,12 @@ const TRACK_H = 120; // px — rendered height of the vertical track
 const THUMB_R = 6; // px — thumb radius
 
 function EqBandSlider({
+    disabled,
     gain,
     label,
     onChangeEnd,
 }: {
+    disabled?: boolean;
     freq: number;
     gain: number;
     label: string;
@@ -170,6 +173,7 @@ function EqBandSlider({
             when an external change arrives (preset, reset) */}
             <NumberInput
                 defaultValue={gain}
+                disabled={disabled}
                 hideControls
                 key={gain}
                 max={EQ_MAX}
@@ -193,12 +197,14 @@ function EqBandSlider({
 
             {/* Vertical track — useMove attaches pointer listeners here */}
             <div
-                ref={ref}
+                aria-disabled={disabled}
+                ref={disabled ? undefined : ref}
                 style={{
                     background: 'var(--mantine-color-default-border)',
                     borderRadius: 4,
-                    cursor: active ? 'grabbing' : 'grab',
+                    cursor: disabled ? 'not-allowed' : active ? 'grabbing' : 'grab',
                     height: TRACK_H,
+                    opacity: disabled ? 0.5 : 1,
                     position: 'relative',
                     userSelect: 'none',
                     width: 8,
@@ -261,6 +267,7 @@ export const EqSettings = memo(() => {
     const { t } = useTranslation();
     const settings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
+    const isBitPerfect = isBitPerfectPlaybackActive(settings.playbackPolicy, settings.type);
 
     // Ref pattern to avoid stale closure when reading webAudio DSP nodes.
     // webAudio?.dsp is undefined at callback creation time; the closure
@@ -485,6 +492,7 @@ export const EqSettings = memo(() => {
             control: (
                 <Switch
                     defaultChecked={settings.equalizer.enabled}
+                    disabled={isBitPerfect}
                     onChange={(e) => handleEqToggle(e.currentTarget.checked)}
                 />
             ),
@@ -492,6 +500,7 @@ export const EqSettings = memo(() => {
                 settings.type === PlayerType.LOCAL
                     ? t('setting.equalizer', { context: 'descriptionMpv' })
                     : t('setting.equalizer', { context: 'descriptionWebAudio' }),
+            note: isBitPerfect ? t('setting.bitPerfectControlLocked') : undefined,
             title: t('setting.equalizer'),
         },
         ...(settings.equalizer.enabled
@@ -502,6 +511,7 @@ export const EqSettings = memo(() => {
                               <Select
                                   clearable
                                   data={eqPresetSelectData}
+                                  disabled={isBitPerfect}
                                   onChange={(name) => {
                                       if (!name) return;
                                       const preset = customEqPresets[name] ?? EQ_PRESETS[name];
@@ -519,6 +529,7 @@ export const EqSettings = memo(() => {
                                           label: name,
                                           value: name,
                                       }))}
+                                      disabled={isBitPerfect}
                                       onChange={(name) => {
                                           if (!name) return;
                                           handleDeleteEqPreset(name);
@@ -537,6 +548,7 @@ export const EqSettings = memo(() => {
                       control: (
                           <Group gap="xs">
                               <TextInput
+                                  disabled={isBitPerfect}
                                   onChange={(e) => setSaveEqName(e.currentTarget.value)}
                                   onKeyDown={(e) => {
                                       if (e.key === 'Enter') handleSaveEqPreset();
@@ -546,7 +558,7 @@ export const EqSettings = memo(() => {
                                   w={180}
                               />
                               <Button
-                                  disabled={!saveEqName.trim()}
+                                  disabled={isBitPerfect || !saveEqName.trim()}
                                   onClick={handleSaveEqPreset}
                                   variant="subtle"
                               >
@@ -561,6 +573,7 @@ export const EqSettings = memo(() => {
                       control: (
                           <Group gap="xs">
                               <Slider
+                                  disabled={isBitPerfect}
                                   label={(v) => `${v > 0 ? '+' : ''}${v} dB`}
                                   max={EQ_MAX}
                                   min={EQ_MIN}
@@ -578,6 +591,7 @@ export const EqSettings = memo(() => {
                               />
                               {/* Manual preamp input */}
                               <NumberInput
+                                  disabled={isBitPerfect}
                                   hideControls
                                   max={EQ_MAX}
                                   min={EQ_MIN}
@@ -601,7 +615,11 @@ export const EqSettings = memo(() => {
                                   value={settings.equalizer.preamp}
                                   w={70}
                               />
-                              <Button onClick={handleResetEq} variant="subtle">
+                              <Button
+                                  disabled={isBitPerfect}
+                                  onClick={handleResetEq}
+                                  variant="subtle"
+                              >
                                   {t('common.reset')}
                               </Button>
                           </Group>
@@ -617,6 +635,7 @@ export const EqSettings = memo(() => {
                           <Group align="flex-end" gap={2} wrap="nowrap">
                               {settings.equalizer.bands.map((band, i) => (
                                   <EqBandSlider
+                                      disabled={isBitPerfect}
                                       freq={band.freq}
                                       gain={band.gain}
                                       key={band.freq}
@@ -705,6 +724,7 @@ export const EqSettings = memo(() => {
             control: (
                 <Switch
                     defaultChecked={settings.compressor.enabled}
+                    disabled={isBitPerfect}
                     onChange={(e) => handleCompToggle(e.currentTarget.checked)}
                 />
             ),
@@ -712,6 +732,7 @@ export const EqSettings = memo(() => {
                 settings.type === PlayerType.LOCAL
                     ? t('setting.compressor', { context: 'descriptionMpv' })
                     : t('setting.compressor', { context: 'descriptionWebAudio' }),
+            note: isBitPerfect ? t('setting.bitPerfectControlLocked') : undefined,
             title: t('setting.compressor'),
         },
         ...(settings.compressor.enabled
@@ -722,6 +743,7 @@ export const EqSettings = memo(() => {
                               <Select
                                   clearable
                                   data={compPresetSelectData}
+                                  disabled={isBitPerfect}
                                   onChange={(name) => {
                                       if (!name) return;
                                       const preset = customCompPresets[name] ?? COMP_PRESETS[name];
@@ -739,6 +761,7 @@ export const EqSettings = memo(() => {
                                           label: name,
                                           value: name,
                                       }))}
+                                      disabled={isBitPerfect}
                                       onChange={(name) => {
                                           if (!name) return;
                                           handleDeleteCompPreset(name);
@@ -757,6 +780,7 @@ export const EqSettings = memo(() => {
                       control: (
                           <Group gap="xs">
                               <TextInput
+                                  disabled={isBitPerfect}
                                   onChange={(e) => setSaveCompName(e.currentTarget.value)}
                                   onKeyDown={(e) => {
                                       if (e.key === 'Enter') handleSaveCompPreset();
@@ -766,7 +790,7 @@ export const EqSettings = memo(() => {
                                   w={180}
                               />
                               <Button
-                                  disabled={!saveCompName.trim()}
+                                  disabled={isBitPerfect || !saveCompName.trim()}
                                   onClick={handleSaveCompPreset}
                                   variant="subtle"
                               >
@@ -782,6 +806,7 @@ export const EqSettings = memo(() => {
                       control: (
                           <Group align="center" gap="xs">
                               <Slider
+                                  disabled={isBitPerfect}
                                   label={(v) => `${v}${unit}`}
                                   max={max}
                                   min={min}
@@ -800,6 +825,7 @@ export const EqSettings = memo(() => {
                               {/* Manual value input — remounts with new defaultValue
                        when settings change (preset applied, slider moved) */}
                               <NumberInput
+                                  disabled={isBitPerfect}
                                   hideControls
                                   max={max}
                                   min={min}
@@ -830,7 +856,11 @@ export const EqSettings = memo(() => {
                   })),
                   {
                       control: (
-                          <Button onClick={handleResetComp} variant="subtle">
+                          <Button
+                              disabled={isBitPerfect}
+                              onClick={handleResetComp}
+                              variant="subtle"
+                          >
                               {t('common.resetToDefault')}
                           </Button>
                       ),

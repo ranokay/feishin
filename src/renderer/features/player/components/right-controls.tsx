@@ -8,6 +8,7 @@ import { CustomPlayerbarSlider } from '/@/renderer/features/player/components/pl
 import { SignalPathBadge } from '/@/renderer/features/player/components/signal-path-badge';
 import { SleepTimerButton } from '/@/renderer/features/player/components/sleep-timer-button';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { showBitPerfectVolumeLockedToast } from '/@/renderer/features/player/utils/strict-control-feedback';
 import { useAudioDevices } from '/@/renderer/features/settings/components/playback/audio-settings';
 import {
     ListConfigBooleanControl,
@@ -55,9 +56,11 @@ import { SegmentedControl } from '/@/shared/components/segmented-control/segment
 import { Select } from '/@/shared/components/select/select';
 import { Slider } from '/@/shared/components/slider/slider';
 import { Stack } from '/@/shared/components/stack/stack';
+import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { useMediaQuery } from '/@/shared/hooks/use-media-query';
 import { useThrottledCallback } from '/@/shared/hooks/use-throttled-callback';
 import { useThrottledValue } from '/@/shared/hooks/use-throttled-value';
+import { isBitPerfectPlaybackActive, resolveEffectivePlaybackVolume } from '/@/shared/signalpath';
 import { LibraryItem, QueueSong, ServerType } from '/@/shared/types/domain-types';
 import { PlayerType } from '/@/shared/types/types';
 
@@ -603,6 +606,13 @@ const VolumeButton = () => {
     const playbackSettings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
     const audioDevices = useAudioDevices(playbackType);
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackSettings.playbackPolicy, playbackType);
+    const mutePauses = isBitPerfect && playbackSettings.bitPerfectMuteBehavior === 'pause';
+    const displayedVolume = resolveEffectivePlaybackVolume(
+        playbackSettings.playbackPolicy,
+        playbackType,
+        volume,
+    );
 
     const currentAudioDeviceId =
         playbackType === PlayerType.LOCAL
@@ -627,8 +637,9 @@ const VolumeButton = () => {
 
     // Sync throttled value to actual volume
     useEffect(() => {
+        if (isBitPerfect) return;
         setVolume(throttledVolume);
-    }, [throttledVolume, setVolume]);
+    }, [isBitPerfect, throttledVolume, setVolume]);
 
     // Sync external volume changes to local state
     useEffect(() => {
@@ -636,12 +647,20 @@ const VolumeButton = () => {
     }, [volume]);
 
     const handleVolumeDown = useCallback(() => {
+        if (isBitPerfect) {
+            showBitPerfectVolumeLockedToast();
+            return;
+        }
         decreaseVolume(volumeWheelStep);
-    }, [decreaseVolume, volumeWheelStep]);
+    }, [decreaseVolume, isBitPerfect, volumeWheelStep]);
 
     const handleVolumeUp = useCallback(() => {
+        if (isBitPerfect) {
+            showBitPerfectVolumeLockedToast();
+            return;
+        }
         increaseVolume(volumeWheelStep);
-    }, [increaseVolume, volumeWheelStep]);
+    }, [increaseVolume, isBitPerfect, volumeWheelStep]);
 
     const handleVolumeSlider = useCallback((e: number) => {
         setSliderValue(e);
@@ -653,6 +672,10 @@ const VolumeButton = () => {
 
     const handleVolumeWheel = useCallback(
         (e: WheelEvent<HTMLButtonElement | HTMLDivElement>) => {
+            if (isBitPerfect) {
+                showBitPerfectVolumeLockedToast();
+                return;
+            }
             let volumeToSet;
             if (e.deltaY > 0 || e.deltaX > 0) {
                 volumeToSet = calculateVolumeDown(volume, volumeWheelStep);
@@ -662,7 +685,7 @@ const VolumeButton = () => {
 
             setVolume(volumeToSet);
         },
-        [setVolume, volume, volumeWheelStep],
+        [isBitPerfect, setVolume, volume, volumeWheelStep],
     );
 
     const handleVolumeDownThrottled = useThrottledCallback(handleVolumeDown, 100);
@@ -686,7 +709,13 @@ const VolumeButton = () => {
                      */}
                     <div style={{ alignItems: 'center', display: 'flex' }}>
                         <ActionIcon
-                            icon={muted ? 'volumeMute' : volume > 50 ? 'volumeMax' : 'volumeNormal'}
+                            icon={
+                                muted
+                                    ? 'volumeMute'
+                                    : displayedVolume > 50
+                                      ? 'volumeMax'
+                                      : 'volumeNormal'
+                            }
                             iconProps={{
                                 color: muted ? 'muted' : undefined,
                                 size: 'xl',
@@ -698,7 +727,13 @@ const VolumeButton = () => {
                             onWheel={handleVolumeWheel}
                             size="sm"
                             tooltip={{
-                                label: muted ? t('player.muted') : volume,
+                                label: mutePauses
+                                    ? muted
+                                        ? t('player.bitPerfectUnmute')
+                                        : t('player.bitPerfectMutePauses')
+                                    : muted
+                                      ? t('player.muted')
+                                      : displayedVolume,
                                 openDelay: 0,
                             }}
                             variant="subtle"
@@ -725,18 +760,27 @@ const VolumeButton = () => {
                 </ContextMenu.Content>
             </ContextMenu>
             {!isMinWidth ? (
-                <CustomPlayerbarSlider
-                    max={100}
-                    min={0}
-                    onChange={handleVolumeSlider}
-                    onClick={(e) => {
-                        e.stopPropagation();
-                    }}
-                    onWheel={handleVolumeWheel}
-                    size={6}
-                    value={sliderValue}
-                    w={volumeWidth}
-                />
+                <Tooltip
+                    disabled={!isBitPerfect}
+                    label={t('player.bitPerfectVolumeLocked')}
+                    openDelay={0}
+                >
+                    <div style={{ width: volumeWidth }}>
+                        <CustomPlayerbarSlider
+                            disabled={isBitPerfect}
+                            max={100}
+                            min={0}
+                            onChange={handleVolumeSlider}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                            }}
+                            onWheel={handleVolumeWheel}
+                            size={6}
+                            value={isBitPerfect ? displayedVolume : sliderValue}
+                            w="100%"
+                        />
+                    </div>
+                </Tooltip>
             ) : null}
         </>
     );

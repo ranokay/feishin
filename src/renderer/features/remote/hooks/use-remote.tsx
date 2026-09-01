@@ -6,9 +6,16 @@ import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/
 import { useSetRating } from '/@/renderer/features/shared/hooks/use-set-rating';
 import { useCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
-import { usePlayerActions, usePlayerStore, useRemoteSettings } from '/@/renderer/store';
+import {
+    usePlaybackSettings,
+    usePlayerActions,
+    usePlayerStore,
+    usePlayerVolume,
+    useRemoteSettings,
+} from '/@/renderer/store';
 import { logger } from '/@/renderer/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
+import { resolveEffectivePlaybackVolume } from '/@/shared/signalpath';
 import { LibraryItem } from '/@/shared/types/domain-types';
 import { PlayerShuffle } from '/@/shared/types/types';
 
@@ -18,6 +25,13 @@ const ipc = isElectron() ? window.api.ipc : null;
 export const useRemote = () => {
     const { mediaSkipForward, setVolume } = usePlayerActions();
     const player = usePlayerStore();
+    const storedVolume = usePlayerVolume();
+    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const effectiveVolume = resolveEffectivePlaybackVolume(
+        playbackPolicy,
+        playbackType,
+        storedVolume,
+    );
 
     const remoteSettings = useRemoteSettings();
     const setRating = useSetRating();
@@ -79,7 +93,11 @@ export const useRemote = () => {
 
         remote.requestVolume((data: { volume: number }) => {
             logger.debug('Request volume received', { volume: data.volume });
-            setVolume(data.volume);
+            const appliedVolume = setVolume(data.volume);
+            if (appliedVolume !== data.volume) {
+                logger.debug('Republishing effective volume', { volume: appliedVolume });
+                remote.updateVolume(appliedVolume);
+            }
         });
 
         remote.requestFavorite((data: { favorite: boolean; id: string; serverId: string }) => {
@@ -114,6 +132,15 @@ export const useRemote = () => {
         setVolume,
         setRating,
     ]);
+
+    useEffect(() => {
+        if (!isRemoteEnabled || !remote) {
+            return;
+        }
+
+        logger.debug('Update effective volume sent', { volume: effectiveVolume });
+        remote.updateVolume(effectiveVolume);
+    }, [effectiveVolume, isRemoteEnabled]);
 
     // Send initial song if one is already playing
     const isInitializedRef = useRef(false);
@@ -212,14 +239,6 @@ export const useRemote = () => {
 
                 logger.debug('Update playback sent', { status: properties.status });
                 remote.updatePlayback(properties.status);
-            },
-            onPlayerVolume: (properties) => {
-                if (!isRemoteEnabled || !remote) {
-                    return;
-                }
-
-                logger.debug('Update volume sent', { volume: properties.volume });
-                remote.updateVolume(properties.volume);
             },
             onUserFavorite: (properties) => {
                 if (!isRemoteEnabled || !remote) {

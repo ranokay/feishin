@@ -7,7 +7,13 @@ import {
     useIsRadioActive,
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
-import { usePlayerSong, usePlayerStore } from '/@/renderer/store';
+import {
+    usePlaybackSettings,
+    usePlayerSong,
+    usePlayerStore,
+    usePlayerVolume,
+} from '/@/renderer/store';
+import { resolveEffectivePlaybackVolume } from '/@/shared/signalpath';
 import { LibraryItem, QueueSong } from '/@/shared/types/domain-types';
 import { PlayerShuffle, ServerType } from '/@/shared/types/types';
 
@@ -18,6 +24,13 @@ const mpris = isElectron() && (utils?.isLinux() || utils?.isMacOS()) ? window.ap
 export const useMPRIS = () => {
     const player = usePlayerStore();
     const currentSong = usePlayerSong();
+    const storedVolume = usePlayerVolume();
+    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const effectiveVolume = resolveEffectivePlaybackVolume(
+        playbackPolicy,
+        playbackType,
+        storedVolume,
+    );
     const isRadioActive = useIsRadioActive();
     const { metadata: radioMetadata, stationName } = useRadioPlayer();
 
@@ -137,7 +150,10 @@ export const useMPRIS = () => {
         });
 
         mpris?.requestVolume((data: { volume: number }) => {
-            player.setVolume(data.volume);
+            const appliedVolume = player.setVolume(data.volume);
+            if (appliedVolume !== data.volume) {
+                mpris.updateVolume(appliedVolume);
+            }
         });
 
         return () => {
@@ -148,6 +164,10 @@ export const useMPRIS = () => {
             ipc?.removeAllListeners('request-volume');
         };
     }, [player]);
+
+    useEffect(() => {
+        mpris?.updateVolume(effectiveVolume);
+    }, [effectiveVolume]);
 
     // Update MPRIS when song, imageUrl, or radio metadata changes
     useEffect(() => {
@@ -204,13 +224,6 @@ export const useMPRIS = () => {
                 }
 
                 mpris?.updateStatus(properties.status);
-            },
-            onPlayerVolume: (properties) => {
-                if (!mpris) {
-                    return;
-                }
-
-                mpris?.updateVolume(properties.volume);
             },
         },
         [],

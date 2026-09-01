@@ -85,10 +85,8 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
         const service = new AudioStateService(connection, {
             broadcast: (snapshot) => {
                 if (generation === audioStateGeneration) {
-                    if (
-                        commandMpv &&
-                        resolveStrictPlaybackStop(playbackPolicy, 'local', snapshot)
-                    ) {
+                    const strictStop = resolveStrictPlaybackStop(playbackPolicy, 'local', snapshot);
+                    if (commandMpv && strictStop?.cause === 'transcode-detected') {
                         void commandMpv
                             .pause()
                             .catch((error) => log.warn('Failed to stop strict playback', error));
@@ -102,6 +100,11 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
                     return;
                 }
                 if (playbackPolicy === 'bit-perfect') {
+                    if (commandMpv) {
+                        void commandMpv
+                            .pause()
+                            .catch((error) => log.warn('Failed to stop strict playback', error));
+                    }
                     return;
                 }
                 sendToastToRenderer({

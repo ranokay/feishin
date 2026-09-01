@@ -39,10 +39,15 @@ import {
     usePlaybackSettings,
     usePlaybackType,
     usePlayerActions,
+    usePlayerSong,
+    usePlayerStatus,
     useSettingsStore,
     useSettingsStoreActions,
 } from '/@/renderer/store';
-import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
+import {
+    useAudioStateStore,
+    useRetainedStrictPlaybackStop,
+} from '/@/renderer/store/audio-state.store';
 import { logger } from '/@/renderer/utils/logger';
 import { ConfirmModal } from '/@/shared/components/modal/modal';
 import { Stack } from '/@/shared/components/stack/stack';
@@ -54,7 +59,7 @@ import {
     type StrictPlaybackStop,
 } from '/@/shared/signalpath';
 import { LibraryItem } from '/@/shared/types/domain-types';
-import { PlayerType } from '/@/shared/types/types';
+import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 const CODEC_PROBES = [
     { codec: 'mp3', container: 'mp3', mime: 'audio/mpeg' },
 
@@ -196,13 +201,20 @@ const LOCAL_PLAYER_FALLBACK_STOP: StrictPlaybackStop = {
 
 const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean }) => {
     const { t } = useTranslation();
-    const snapshot = useAudioSnapshot();
+    const retainedStop = useRetainedStrictPlaybackStop();
+    const currentSong = usePlayerSong();
+    const playerStatus = usePlayerStatus();
     const { playbackPolicy, type: playbackType } = usePlaybackSettings();
     const { mediaPause, mediaPlay } = usePlayerActions();
     const { setSettings } = useSettingsStoreActions();
+    const clearStrictPlaybackStop = useAudioStateStore((state) => state.clearStrictPlaybackStop);
+    const syncPlaybackKey = useAudioStateStore((state) => state.syncPlaybackKey);
     const handledStop = useRef<null | string>(null);
+    const playbackKey = currentSong?._uniqueId ?? null;
+    const strictPlaybackState =
+        retainedStop?.playbackKey === playbackKey ? retainedStop.state : null;
     const stop =
-        resolveStrictPlaybackStop(playbackPolicy, playbackType, snapshot) ??
+        resolveStrictPlaybackStop(playbackPolicy, playbackType, strictPlaybackState) ??
         (fallbackRequested && playbackPolicy === 'bit-perfect' && playbackType === PlayerType.LOCAL
             ? LOCAL_PLAYER_FALLBACK_STOP
             : null);
@@ -211,9 +223,22 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
     const standardWouldHelp = stop?.standardWouldHelp;
 
     useEffect(() => {
+        syncPlaybackKey(playbackKey);
+    }, [playbackKey, syncPlaybackKey]);
+
+    useEffect(() => {
+        if (playbackPolicy !== 'bit-perfect' || playbackType !== PlayerType.LOCAL) {
+            clearStrictPlaybackStop();
+        }
         if (!stop || !stopCause) {
+            if (handledStop.current !== null) {
+                closeModal(STRICT_PLAYBACK_STOP_MODAL_ID);
+            }
             handledStop.current = null;
             return;
+        }
+        if (playerStatus === PlayerStatus.PLAYING) {
+            mediaPause();
         }
         const key = `${stopCause}:${stopDetail ?? ''}`;
         if (handledStop.current === key) {
@@ -221,7 +246,6 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
         }
         handledStop.current = key;
 
-        mediaPause();
         logger.warn('Bit-Perfect playback stopped', { cause: stopCause });
 
         openModal({
@@ -253,7 +277,20 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
             modalId: STRICT_PLAYBACK_STOP_MODAL_ID,
             title: t('error.strictPlaybackStopTitle'),
         });
-    }, [mediaPause, mediaPlay, setSettings, standardWouldHelp, stop, stopCause, stopDetail, t]);
+    }, [
+        clearStrictPlaybackStop,
+        mediaPause,
+        mediaPlay,
+        playbackPolicy,
+        playbackType,
+        playerStatus,
+        setSettings,
+        standardWouldHelp,
+        stop,
+        stopCause,
+        stopDetail,
+        t,
+    ]);
 
     return null;
 };

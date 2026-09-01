@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     classifyAoFailure,
     resolveStrictPlaybackStop,
+    retainStrictPlaybackStopState,
     shouldUseWebPlayerFallback,
 } from '../src/shared/signalpath';
 
@@ -58,5 +59,31 @@ describe('shouldUseWebPlayerFallback', () => {
         expect(shouldUseWebPlayerFallback('exclusive', 'local', true)).toBe(true);
         expect(shouldUseWebPlayerFallback('standard', 'local', false)).toBe(false);
         expect(shouldUseWebPlayerFallback('standard', 'web', true)).toBe(false);
+    });
+});
+
+describe('retainStrictPlaybackStopState', () => {
+    it('keeps a failure latched when a later snapshot clears the engine error', () => {
+        const lastError = classifyAoFailure('[ao/coreaudio] failed to set hogmode: device is busy');
+        const latched = retainStrictPlaybackStopState(null, 'song-1', { lastError });
+
+        expect(
+            retainStrictPlaybackStopState(latched, 'song-1', {
+                lastError: null,
+                serverRoute: null,
+            }),
+        ).toBe(latched);
+    });
+
+    it('releases a latched failure when the track changes', () => {
+        const lastError = classifyAoFailure('[ao/coreaudio] failed to set hogmode: device is busy');
+        const latched = retainStrictPlaybackStopState(null, 'song-1', { lastError });
+
+        expect(
+            retainStrictPlaybackStopState(latched, 'song-2', {
+                lastError: null,
+                serverRoute: null,
+            }),
+        ).toBeNull();
     });
 });

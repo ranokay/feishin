@@ -989,8 +989,9 @@ describe('AudioStateService server-route verification', () => {
 
     it('classifies hog-mode contention into a typed error and notifies', async () => {
         const connection = createStubConnection();
+        const broadcast = vi.fn();
         const onEngineError = vi.fn();
-        const service = new AudioStateService(connection, { onEngineError });
+        const service = new AudioStateService(connection, { broadcast, onEngineError });
         await service.start();
 
         connection.emit('log-message', {
@@ -1006,6 +1007,11 @@ describe('AudioStateService server-route verification', () => {
         expect(errorEvent?.detail).toContain('exclusive-contention');
         expect(onEngineError).toHaveBeenCalledWith(
             expect.objectContaining({ cause: 'exclusive-contention' }),
+        );
+        expect(broadcast).toHaveBeenCalledWith(
+            expect.objectContaining({
+                lastError: expect.objectContaining({ cause: 'exclusive-contention' }),
+            }),
         );
         service.dispose();
     });

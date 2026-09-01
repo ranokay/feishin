@@ -600,11 +600,16 @@ export class AudioStateService {
     private handleEngineFailure(failure: AudioEngineFailure): void {
         this.state.lastError = failure;
         this.log.warn(`Audio engine error (${failure.cause}): ${failure.explanation}`);
-        this.record({
+        this.pushEvent({
             detail: `${failure.cause}: ${failure.explanation}`,
             type: 'engine-error',
         });
         this.onEngineError?.(failure);
+        if (this.broadcastTimer) {
+            clearTimeout(this.broadcastTimer);
+            this.broadcastTimer = null;
+        }
+        this.emitSnapshot();
     }
 
     private pushEvent(event: PendingAudioEngineEvent): void {

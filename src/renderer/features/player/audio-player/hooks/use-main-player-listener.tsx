@@ -6,6 +6,7 @@ import { showBitPerfectVolumeLockedToast } from '/@/renderer/features/player/uti
 import { useIsRadioActive, useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { usePlaybackSettings, usePlayerActions, useVolumeWheelStep } from '/@/renderer/store';
 import { toast } from '/@/shared/components/toast/toast';
+import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
 
 const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
 const mpvPlayerListener = isElectron() ? window.api.mpvPlayerListener : null;
@@ -23,9 +24,9 @@ const toggleRadioPlayPause = () => {
 
 export const useMainPlayerListener = () => {
     const isRadioActive = useIsRadioActive();
-    const { playbackPolicy } = usePlaybackSettings();
+    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
     const volumeWheelStep = useVolumeWheelStep();
-    const isBitPerfect = playbackPolicy === 'bit-perfect';
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const {
         decreaseVolume,
         increaseVolume,

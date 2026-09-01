@@ -2,9 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import {
     BIT_PERFECT_MUTE_BEHAVIORS,
+    isBitPerfectPlaybackActive,
     normalizeBitPerfectMuteBehavior,
     resolvePlaybackControlAction,
 } from '../src/shared/signalpath';
+
+describe('isBitPerfectPlaybackActive', () => {
+    it('only activates strict controls for the local player', () => {
+        expect(isBitPerfectPlaybackActive('bit-perfect', 'local')).toBe(true);
+        expect(isBitPerfectPlaybackActive('bit-perfect', 'web')).toBe(false);
+        expect(isBitPerfectPlaybackActive('bit-perfect', 'jukebox')).toBe(false);
+        expect(isBitPerfectPlaybackActive('exclusive', 'local')).toBe(false);
+    });
+});
 
 describe('normalizeBitPerfectMuteBehavior', () => {
     it.each(BIT_PERFECT_MUTE_BEHAVIORS)('passes through %s', (behavior) => {

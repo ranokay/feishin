@@ -25,6 +25,7 @@ import { Stack } from '/@/shared/components/stack/stack';
 import { Switch } from '/@/shared/components/switch/switch';
 import { TextInput } from '/@/shared/components/text-input/text-input';
 import { Text } from '/@/shared/components/text/text';
+import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
 import { PlayerType } from '/@/shared/types/types';
 
 const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
@@ -266,7 +267,7 @@ export const EqSettings = memo(() => {
     const { t } = useTranslation();
     const settings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
-    const isBitPerfect = settings.playbackPolicy === 'bit-perfect';
+    const isBitPerfect = isBitPerfectPlaybackActive(settings.playbackPolicy, settings.type);
 
     // Ref pattern to avoid stale closure when reading webAudio DSP nodes.
     // webAudio?.dsp is undefined at callback creation time; the closure

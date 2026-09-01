@@ -16,6 +16,14 @@ export type PlaybackControlAction =
     | 'toggle-mute';
 export type PlaybackControlStatus = 'paused' | 'playing' | 'stopped';
 export type PlaybackPolicy = (typeof PLAYBACK_POLICIES)[number];
+export type PlaybackPolicyPlayerType = 'jukebox' | 'local' | 'web';
+
+export function isBitPerfectPlaybackActive(
+    policy: PlaybackPolicy,
+    playerType: PlaybackPolicyPlayerType,
+): boolean {
+    return policy === 'bit-perfect' && playerType === 'local';
+}
 
 export function normalizeBitPerfectMuteBehavior(value: unknown): BitPerfectMuteBehavior {
     return BIT_PERFECT_MUTE_BEHAVIORS.includes(value as BitPerfectMuteBehavior)

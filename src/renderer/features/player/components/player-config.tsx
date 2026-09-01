@@ -41,6 +41,7 @@ import { Slider } from '/@/shared/components/slider/slider';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { Tooltip } from '/@/shared/components/tooltip/tooltip';
+import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
 import { CrossfadeStyle, PlayerStatus, PlayerStyle, PlayerType } from '/@/shared/types/types';
 
 const ipc = isElectron() ? window.api.ipc : null;
@@ -430,9 +431,9 @@ export const PlaybackSpeedSlider = () => {
     const { t } = useTranslation();
     const speed = usePlayerSpeed();
     const { setSpeed } = usePlayerActions();
-    const { playbackPolicy } = usePlaybackSettings();
+    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
     const { bpm } = usePlayerSongProperties(['bpm']) ?? {};
-    const isBitPerfect = playbackPolicy === 'bit-perfect';
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const displayedSpeed = isBitPerfect ? 1 : speed;
 
     const formatPlaybackSpeedSliderLabel = useMemo(
@@ -479,8 +480,8 @@ export const PitchControls = () => {
     const microtonal = useMicrotonalPitchControls();
     const speed = usePlayerSpeed();
     const { setSpeed } = usePlayerActions();
-    const { playbackPolicy } = usePlaybackSettings();
-    const isBitPerfect = playbackPolicy === 'bit-perfect';
+    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const displayedSpeed = isBitPerfect ? 1 : speed;
 
     const speedToPitch = (speed: number) => {

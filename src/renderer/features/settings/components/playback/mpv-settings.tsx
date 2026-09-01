@@ -26,6 +26,7 @@ import { Switch } from '/@/shared/components/switch/switch';
 import { TextInput } from '/@/shared/components/text-input/text-input';
 import { Text } from '/@/shared/components/text/text';
 import { Textarea } from '/@/shared/components/textarea/textarea';
+import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
 import { PlayerType } from '/@/shared/types/types';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
@@ -35,7 +36,7 @@ export const MpvSettings = memo(() => {
     const { t } = useTranslation();
     const settings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
-    const isBitPerfect = settings.playbackPolicy === 'bit-perfect';
+    const isBitPerfect = isBitPerfectPlaybackActive(settings.playbackPolicy, settings.type);
     // const { pause } = usePlayerControls();
     // const { clearQueue } = useQueueControls();
 

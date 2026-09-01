@@ -16,7 +16,7 @@ import {
 } from '/@/renderer/store/timestamp.store';
 import { migratePlayerStorePersist, playerStoreStorage } from '/@/renderer/store/utils';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
-import { resolvePlaybackControlAction } from '/@/shared/signalpath';
+import { isBitPerfectPlaybackActive, resolvePlaybackControlAction } from '/@/shared/signalpath';
 import { PlayerData, QueueData, QueueSong, Song } from '/@/shared/types/domain-types';
 import {
     CrossfadeStyle,
@@ -337,13 +337,12 @@ function regenerateShuffledIndexesIfNeeded(state: {
 // Strict playback pins runtime values without overwriting the user's values for other policies.
 function shouldBlockPlaybackControl(control: 'speed' | 'volume', status: PlayerStatus): boolean {
     const playback = useSettingsStore.getState().playback;
+    const policy = isBitPerfectPlaybackActive(playback.playbackPolicy, playback.type)
+        ? 'bit-perfect'
+        : 'standard';
     return (
-        resolvePlaybackControlAction(
-            playback.playbackPolicy,
-            playback.bitPerfectMuteBehavior,
-            control,
-            status,
-        ) === 'block'
+        resolvePlaybackControlAction(policy, playback.bitPerfectMuteBehavior, control, status) ===
+        'block'
     );
 }
 
@@ -1364,8 +1363,14 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                 },
                 mediaToggleMute: () => {
                     const playback = useSettingsStore.getState().playback;
-                    const action = resolvePlaybackControlAction(
+                    const policy = isBitPerfectPlaybackActive(
                         playback.playbackPolicy,
+                        playback.type,
+                    )
+                        ? 'bit-perfect'
+                        : 'standard';
+                    const action = resolvePlaybackControlAction(
+                        policy,
                         playback.bitPerfectMuteBehavior,
                         'mute',
                         get().player.status,

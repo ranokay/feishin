@@ -13,6 +13,7 @@ import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
 import { useDisclosure } from '/@/shared/hooks/use-disclosure';
+import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
 import { PlayerType } from '/@/shared/types/types';
 
 const CONSENT_GRANTED_KEY = 'visualizer_system_audio_consent_granted';
@@ -57,7 +58,7 @@ function VisualizerSystemAudioBridge() {
         useDisclosure(false);
 
     const isExclusiveModeEnabled = audioExclusiveMode === 'yes';
-    const isBitPerfect = playbackPolicy === 'bit-perfect';
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const isSystemAudioBlocked = isExclusiveModeEnabled || isBitPerfect;
     const isVisualizerBlockedByPlaybackPolicy =
         isElectron() &&

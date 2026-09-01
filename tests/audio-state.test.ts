@@ -12,7 +12,7 @@ import {
     OBSERVED_AUDIO_PROPERTIES,
     parseAoLogEvent,
 } from '../src/main/features/core/player/mpv/audio-state';
-import { BIT_PERFECT_PROPERTY_PINS } from '../src/shared/signalpath';
+import { BIT_PERFECT_PROPERTY_PINS, resolveMpvPlaybackKey } from '../src/shared/signalpath';
 
 interface StubConnection extends AudioStateConnection {
     emit(eventName: string, payload: Record<string, unknown>): void;
@@ -60,6 +60,18 @@ describe('observed audio property set', () => {
             'track-list',
             'volume',
         ]);
+    });
+});
+
+describe('resolveMpvPlaybackKey', () => {
+    it('preserves the identity of local radio sources', () => {
+        expect(
+            resolveMpvPlaybackKey(
+                [{ kind: 'radio', playbackKey: 'radio-1', url: 'https://radio/stream' }],
+                'https://radio/stream',
+                0,
+            ),
+        ).toBe('radio-1');
     });
 });
 

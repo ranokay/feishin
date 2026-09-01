@@ -24,6 +24,7 @@ import {
     BIT_PERFECT_PROPERTY_PINS,
     type MpvLoadSource,
     type PlaybackPolicy,
+    resolveMpvPlaybackKey,
     resolveStrictPlaybackStop,
     type StrictPlaybackStop,
 } from '/@/shared/signalpath';
@@ -138,14 +139,8 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
                           await commandMpv.setProperty(pin.name, pin.value);
                       }
                     : undefined,
-            resolvePlaybackKey: (path, position) => {
-                const positioned = queuedStreams[position];
-                const source =
-                    positioned?.url === path
-                        ? positioned
-                        : queuedStreams.find((candidate) => candidate?.url === path);
-                return source?.kind === 'library' ? source.playbackKey : null;
-            },
+            resolvePlaybackKey: (path, position) =>
+                resolveMpvPlaybackKey(queuedStreams, path, position),
             strictPropertyPins:
                 playbackPolicy === 'bit-perfect' ? BIT_PERFECT_PROPERTY_PINS : undefined,
         });

@@ -1,5 +1,6 @@
 import IcecastMetadataStats from 'icecast-metadata-stats';
 import isElectron from 'is-electron';
+import { nanoid } from 'nanoid';
 import React, { useEffect } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
@@ -39,6 +40,7 @@ interface RadioStore {
     currentStreamUrl: null | string;
     isPlaying: boolean;
     metadata: null | RadioMetadata;
+    playbackKey: null | string;
     stationName: null | string;
 }
 
@@ -47,6 +49,7 @@ const CLEARED_RADIO_STATE = {
     currentStreamUrl: null,
     isPlaying: false,
     metadata: null,
+    playbackKey: null,
     stationName: null,
 } as const;
 
@@ -94,11 +97,17 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
                     currentStreamUrl: newStreamUrl,
                     isPlaying: true,
                     metadata: isSwitchingStation ? null : state.metadata,
+                    playbackKey:
+                        isSwitchingStation || !state.playbackKey ? nanoid() : state.playbackKey,
                     stationName: newStationName,
                 };
             });
         },
-        setCurrentStreamUrl: (currentStreamUrl) => set({ currentStreamUrl }),
+        setCurrentStreamUrl: (currentStreamUrl) =>
+            set((state) => ({
+                currentStreamUrl,
+                playbackKey: currentStreamUrl ? (state.playbackKey ?? nanoid()) : null,
+            })),
         setIsPlaying: (isPlaying) => set({ isPlaying }),
         setMetadata: (metadata) => set({ metadata }),
         setStationName: (stationName) => set({ stationName }),
@@ -122,12 +131,15 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
     currentStreamUrl: null,
     isPlaying: false,
     metadata: null,
+    playbackKey: null,
     stationName: null,
 }));
 
 export const useIsPlayingRadio = () => useRadioStore((state) => state.isPlaying);
 
 export const useIsRadioActive = () => useRadioStore((state) => Boolean(state.currentStreamUrl));
+
+export const useRadioPlaybackKey = () => useRadioStore((state) => state.playbackKey);
 
 export const useRadioPlayer = () => {
     const currentStationArt = useRadioStore((state) => state.currentStationArt);
@@ -161,6 +173,7 @@ export const useRadioAudioInstance = () => {
     const { actions } = useRadioStore();
     const currentStreamUrl = useRadioStore((state) => state.currentStreamUrl);
     const isPlaying = useRadioStore((state) => state.isPlaying);
+    const playbackKey = useRadioPlaybackKey();
     const playbackType = usePlaybackType();
     const isUsingMpv = playbackType === PlayerType.LOCAL && mpvPlayer;
 
@@ -171,11 +184,18 @@ export const useRadioAudioInstance = () => {
         }
 
         if (currentStreamUrl) {
-            mpvPlayer.setQueue({ kind: 'radio', url: currentStreamUrl }, undefined, !isPlaying);
+            if (!playbackKey) {
+                return;
+            }
+            mpvPlayer.setQueue(
+                { kind: 'radio', playbackKey, url: currentStreamUrl },
+                undefined,
+                !isPlaying,
+            );
         } else {
             mpvPlayer.pause();
         }
-    }, [currentStreamUrl, isPlaying, isUsingMpv]);
+    }, [currentStreamUrl, isPlaying, isUsingMpv, playbackKey]);
 
     usePlayerEvents(
         {

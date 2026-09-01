@@ -29,6 +29,7 @@ import {
     RadioAudioInstanceHook,
     RadioMetadataHook,
     useIsRadioActive,
+    useRadioPlaybackKey,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { RemoteHook } from '/@/renderer/features/remote/hooks/use-remote';
 import { VisualizerSystemAudioBridgeHook } from '/@/renderer/features/visualizer/components/visualizer-system-audio-bridge';
@@ -203,13 +204,14 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
     const retainedStop = useRetainedStrictPlaybackStop();
     const currentSong = usePlayerSong();
     const playerStatus = usePlayerStatus();
+    const radioPlaybackKey = useRadioPlaybackKey();
     const { playbackPolicy, type: playbackType } = usePlaybackSettings();
     const { mediaPause, mediaPlay } = usePlayerActions();
     const { setSettings } = useSettingsStoreActions();
     const clearStrictPlaybackStop = useAudioStateStore((state) => state.clearStrictPlaybackStop);
     const syncPlaybackKey = useAudioStateStore((state) => state.syncPlaybackKey);
     const handledStop = useRef<null | string>(null);
-    const playbackKey = currentSong?._uniqueId ?? null;
+    const playbackKey = radioPlaybackKey ?? currentSong?._uniqueId ?? null;
     const strictPlaybackState = retainedStop?.playbackKey === playbackKey ? retainedStop : null;
     const stop = useMemo(
         () =>

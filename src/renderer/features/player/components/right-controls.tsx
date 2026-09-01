@@ -60,7 +60,7 @@ import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { useMediaQuery } from '/@/shared/hooks/use-media-query';
 import { useThrottledCallback } from '/@/shared/hooks/use-throttled-callback';
 import { useThrottledValue } from '/@/shared/hooks/use-throttled-value';
-import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
+import { isBitPerfectPlaybackActive, resolveEffectivePlaybackVolume } from '/@/shared/signalpath';
 import { LibraryItem, QueueSong, ServerType } from '/@/shared/types/domain-types';
 import { PlayerType } from '/@/shared/types/types';
 
@@ -608,7 +608,11 @@ const VolumeButton = () => {
     const audioDevices = useAudioDevices(playbackType);
     const isBitPerfect = isBitPerfectPlaybackActive(playbackSettings.playbackPolicy, playbackType);
     const mutePauses = isBitPerfect && playbackSettings.bitPerfectMuteBehavior === 'pause';
-    const displayedVolume = isBitPerfect ? 100 : volume;
+    const displayedVolume = resolveEffectivePlaybackVolume(
+        playbackSettings.playbackPolicy,
+        playbackType,
+        volume,
+    );
 
     const currentAudioDeviceId =
         playbackType === PlayerType.LOCAL
@@ -772,7 +776,7 @@ const VolumeButton = () => {
                             }}
                             onWheel={handleVolumeWheel}
                             size={6}
-                            value={isBitPerfect ? 100 : sliderValue}
+                            value={isBitPerfect ? displayedVolume : sliderValue}
                             w="100%"
                         />
                     </div>

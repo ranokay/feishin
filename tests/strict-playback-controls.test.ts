@@ -4,6 +4,7 @@ import {
     BIT_PERFECT_MUTE_BEHAVIORS,
     isBitPerfectPlaybackActive,
     normalizeBitPerfectMuteBehavior,
+    resolveEffectivePlaybackVolume,
     resolvePlaybackControlAction,
 } from '../src/shared/signalpath';
 
@@ -13,6 +14,14 @@ describe('isBitPerfectPlaybackActive', () => {
         expect(isBitPerfectPlaybackActive('bit-perfect', 'web')).toBe(false);
         expect(isBitPerfectPlaybackActive('bit-perfect', 'jukebox')).toBe(false);
         expect(isBitPerfectPlaybackActive('exclusive', 'local')).toBe(false);
+    });
+});
+
+describe('resolveEffectivePlaybackVolume', () => {
+    it('reports unity volume only for active local Bit-Perfect playback', () => {
+        expect(resolveEffectivePlaybackVolume('bit-perfect', 'local', 30)).toBe(100);
+        expect(resolveEffectivePlaybackVolume('bit-perfect', 'web', 30)).toBe(30);
+        expect(resolveEffectivePlaybackVolume('standard', 'local', 30)).toBe(30);
     });
 });
 

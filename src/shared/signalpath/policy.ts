@@ -2,6 +2,7 @@ import { BIT_PERFECT_PROPERTY_PINS, strictPropertyRecord } from './strict-proper
 
 export const PLAYBACK_POLICIES = ['standard', 'exclusive', 'bit-perfect'] as const;
 export const BIT_PERFECT_MUTE_BEHAVIORS = ['pause', 'gain-mute'] as const;
+export const BIT_PERFECT_EFFECTIVE_VOLUME = 100;
 
 export type BitPerfectMuteBehavior = (typeof BIT_PERFECT_MUTE_BEHAVIORS)[number];
 
@@ -35,6 +36,16 @@ export function normalizePlaybackPolicy(value: unknown): PlaybackPolicy {
     return PLAYBACK_POLICIES.includes(value as PlaybackPolicy)
         ? (value as PlaybackPolicy)
         : 'standard';
+}
+
+export function resolveEffectivePlaybackVolume(
+    policy: PlaybackPolicy,
+    playerType: PlaybackPolicyPlayerType,
+    storedVolume: number,
+): number {
+    return isBitPerfectPlaybackActive(policy, playerType)
+        ? BIT_PERFECT_EFFECTIVE_VOLUME
+        : storedVolume;
 }
 
 export function resolvePlaybackControlAction(

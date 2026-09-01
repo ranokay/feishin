@@ -16,7 +16,11 @@ import {
 } from '/@/renderer/store/timestamp.store';
 import { migratePlayerStorePersist, playerStoreStorage } from '/@/renderer/store/utils';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
-import { isBitPerfectPlaybackActive, resolvePlaybackControlAction } from '/@/shared/signalpath';
+import {
+    BIT_PERFECT_EFFECTIVE_VOLUME,
+    isBitPerfectPlaybackActive,
+    resolvePlaybackControlAction,
+} from '/@/shared/signalpath';
 import { PlayerData, QueueData, QueueSong, Song } from '/@/shared/types/domain-types';
 import {
     CrossfadeStyle,
@@ -73,7 +77,7 @@ interface Actions {
     setShuffle: (shuffle: PlayerShuffle) => void;
     setSpeed: (speed: number) => void;
     setTransitionType: (transitionType: PlayerStyle) => void;
-    setVolume: (volume: number) => void;
+    setVolume: (volume: number) => number;
     shuffle: () => void;
     shuffleAll: () => void;
     shuffleSelected: (items: QueueSong[]) => void;
@@ -1617,11 +1621,12 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                 },
                 setVolume: (volume: number) => {
                     if (shouldBlockPlaybackControl('volume', get().player.status)) {
-                        return;
+                        return BIT_PERFECT_EFFECTIVE_VOLUME;
                     }
                     set((state) => {
                         state.player.volume = volume;
                     });
+                    return get().player.volume;
                 },
                 shuffle: () => {
                     set((state) => {

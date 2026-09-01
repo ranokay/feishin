@@ -48,7 +48,11 @@ import { ConfirmModal } from '/@/shared/components/modal/modal';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
-import { resolveStrictPlaybackStop, shouldUseWebPlayerFallback } from '/@/shared/signalpath';
+import {
+    resolveStrictPlaybackStop,
+    shouldUseWebPlayerFallback,
+    type StrictPlaybackStop,
+} from '/@/shared/signalpath';
 import { LibraryItem } from '/@/shared/types/domain-types';
 import { PlayerType } from '/@/shared/types/types';
 const CODEC_PROBES = [
@@ -129,6 +133,7 @@ export const AudioPlayers = () => {
         webAudio,
     } = usePlaybackSettings();
     const { setWebAudio, webAudio: audioContext } = useWebAudio();
+    const [fallbackRequested, setFallbackRequested] = useState(false);
 
     useEffect(() => {
         detectBrowserProfile();
@@ -153,15 +158,17 @@ export const AudioPlayers = () => {
             <RadioMetadataHook />
             <VisualizerSystemAudioBridgeHook />
             <AutosaveHook />
-            <StrictPlaybackGuard />
+            <StrictPlaybackGuard fallbackRequested={fallbackRequested} />
             <AudioPlayersContent
                 audioContext={audioContext}
                 audioDeviceId={audioDeviceId}
                 audioSampleRateHz={audioSampleRateHz}
+                fallbackRequested={fallbackRequested}
                 playbackPolicy={playbackPolicy}
                 playbackType={playbackType}
                 resetSampleRate={resetSampleRate}
                 serverId={serverId}
+                setFallbackRequested={setFallbackRequested}
                 setWebAudio={setWebAudio}
                 webAudio={webAudio}
             />
@@ -170,18 +177,35 @@ export const AudioPlayers = () => {
 };
 
 const mpvPlayerListener = isElectron() ? window.api.mpvPlayerListener : null;
-const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
 const ipc = isElectron() ? window.api.ipc : null;
 const STRICT_PLAYBACK_STOP_MODAL_ID = 'strict-playback-stop';
+const STRICT_PLAYBACK_STOP_MESSAGE_KEYS = {
+    'device-lost': 'error.strictPlaybackStopDeviceLost',
+    'exclusive-contention': 'error.strictPlaybackStopExclusiveContention',
+    'player-fallback': 'error.strictPlaybackStopPlayerFallback',
+    'transcode-detected': 'error.strictPlaybackStopTranscoded',
+    unknown: 'error.strictPlaybackStopUnknown',
+    'unsupported-format': 'error.strictPlaybackStopUnsupportedFormat',
+    'unsupported-rate': 'error.strictPlaybackStopUnsupportedRate',
+} as const satisfies Record<StrictPlaybackStop['cause'], string>;
+const LOCAL_PLAYER_FALLBACK_STOP: StrictPlaybackStop = {
+    cause: 'player-fallback',
+    detail: 'local player fallback requested',
+    standardWouldHelp: true,
+};
 
-const StrictPlaybackGuard = () => {
+const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean }) => {
     const { t } = useTranslation();
     const snapshot = useAudioSnapshot();
     const { playbackPolicy, type: playbackType } = usePlaybackSettings();
     const { mediaPause, mediaPlay } = usePlayerActions();
     const { setSettings } = useSettingsStoreActions();
     const handledStop = useRef<null | string>(null);
-    const stop = resolveStrictPlaybackStop(playbackPolicy, playbackType, snapshot);
+    const stop =
+        resolveStrictPlaybackStop(playbackPolicy, playbackType, snapshot) ??
+        (fallbackRequested && playbackPolicy === 'bit-perfect' && playbackType === PlayerType.LOCAL
+            ? LOCAL_PLAYER_FALLBACK_STOP
+            : null);
     const stopCause = stop?.cause;
     const stopDetail = stop?.detail;
     const standardWouldHelp = stop?.standardWouldHelp;
@@ -198,7 +222,6 @@ const StrictPlaybackGuard = () => {
         handledStop.current = key;
 
         mediaPause();
-        mpvPlayer?.pause();
         logger.warn('Bit-Perfect playback stopped', { cause: stopCause });
 
         openModal({
@@ -217,7 +240,7 @@ const StrictPlaybackGuard = () => {
                     }}
                 >
                     <Stack gap="xs">
-                        <Text>{stop.explanation}</Text>
+                        <Text>{t(STRICT_PLAYBACK_STOP_MESSAGE_KEYS[stopCause])}</Text>
                         <Text>
                             {standardWouldHelp
                                 ? t('error.strictPlaybackStopCanContinue')
@@ -239,25 +262,28 @@ const AudioPlayersContent = ({
     audioContext,
     audioDeviceId,
     audioSampleRateHz,
+    fallbackRequested,
     playbackPolicy,
     playbackType,
     resetSampleRate,
     serverId,
+    setFallbackRequested,
     setWebAudio,
     webAudio,
 }: {
     audioContext: ReturnType<typeof useWebAudio>['webAudio'];
     audioDeviceId: null | string | undefined;
     audioSampleRateHz: number | undefined;
+    fallbackRequested: boolean;
     playbackPolicy: ReturnType<typeof usePlaybackSettings>['playbackPolicy'];
     playbackType: PlayerType;
     resetSampleRate: ReturnType<typeof useSettingsStoreActions>['resetSampleRate'];
     serverId: null | string;
+    setFallbackRequested: (requested: boolean) => void;
     setWebAudio: ReturnType<typeof useWebAudio>['setWebAudio'];
     webAudio: boolean;
 }) => {
     const isRadioActive = useIsRadioActive();
-    const [fallbackRequested, setFallbackRequested] = useState(false);
     const useWebPlayerFallback = shouldUseWebPlayerFallback(
         playbackPolicy,
         playbackType,
@@ -286,7 +312,7 @@ const AudioPlayersContent = ({
         });
 
         return () => ipc?.removeAllListeners('renderer-player-fallback');
-    }, [playbackPolicy]);
+    }, [playbackPolicy, setFallbackRequested]);
 
     useEffect(() => {
         if (activePlaybackType !== PlayerType.WEB || !webAudio || !('AudioContext' in window)) {

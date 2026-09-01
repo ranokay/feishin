@@ -3,9 +3,8 @@ import type { PlaybackPolicy, PlaybackPolicyPlayerType } from './policy';
 import type { AudioSnapshot } from './snapshot';
 
 export interface StrictPlaybackStop {
-    cause: 'transcode-detected' | AudioEngineFailureCause;
+    cause: 'player-fallback' | 'transcode-detected' | AudioEngineFailureCause;
     detail: null | string;
-    explanation: string;
     standardWouldHelp: boolean;
 }
 
@@ -26,7 +25,6 @@ export function resolveStrictPlaybackStop(
         return {
             cause: 'transcode-detected',
             detail: state.serverRoute.detail,
-            explanation: 'The server delivered a transcoded stream instead of the original audio.',
             standardWouldHelp: true,
         };
     }

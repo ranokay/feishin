@@ -63,7 +63,7 @@ export interface AudioStateServiceOptions {
     /** Process logger injection; the module itself stays import-safe outside electron. */
     log?: { debug: (message: string) => void; warn: (message: string, error?: unknown) => void };
     /** Typed engine failures (exclusive contention etc.) for immediate surfacing. */
-    onEngineError?: (failure: AudioEngineFailure) => void;
+    onEngineError?: (failure: AudioEngineFailure, playbackKey: null | string) => void;
     /** Injectable stream-header probe; verification stays off when absent. */
     probeStreamHeaders?: (url: string) => Promise<null | StreamHeaderProbe>;
     /** Command-owner callback. The observation connection remains read-only. */
@@ -321,7 +321,9 @@ export class AudioStateService {
     };
     private nextEventId = 1;
     private readonly onBroadcast: (snapshot: AudioSnapshot) => void;
-    private readonly onEngineError: ((failure: AudioEngineFailure) => void) | null;
+    private readonly onEngineError:
+        | ((failure: AudioEngineFailure, playbackKey: null | string) => void)
+        | null;
     private readonly playbackKeysByEntryId = new Map<number, string>();
     private readonly probeStreamHeaders:
         | ((url: string) => Promise<null | StreamHeaderProbe>)
@@ -622,7 +624,7 @@ export class AudioStateService {
             detail: `${failure.cause}: ${failure.explanation}`,
             type: 'engine-error',
         });
-        this.onEngineError?.(failure);
+        this.onEngineError?.(failure, this.state.playbackKey);
         if (this.broadcastTimer) {
             clearTimeout(this.broadcastTimer);
             this.broadcastTimer = null;

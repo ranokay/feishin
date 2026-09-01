@@ -12,7 +12,11 @@ import {
     OBSERVED_AUDIO_PROPERTIES,
     parseAoLogEvent,
 } from '../src/main/features/core/player/mpv/audio-state';
-import { BIT_PERFECT_PROPERTY_PINS, resolveMpvPlaybackKey } from '../src/shared/signalpath';
+import {
+    BIT_PERFECT_PROPERTY_PINS,
+    isMpvPlaybackKeyQueued,
+    resolveMpvPlaybackKey,
+} from '../src/shared/signalpath';
 
 interface StubConnection extends AudioStateConnection {
     emit(eventName: string, payload: Record<string, unknown>): void;
@@ -65,13 +69,13 @@ describe('observed audio property set', () => {
 
 describe('resolveMpvPlaybackKey', () => {
     it('preserves the identity of local radio sources', () => {
-        expect(
-            resolveMpvPlaybackKey(
-                [{ kind: 'radio', playbackKey: 'radio-1', url: 'https://radio/stream' }],
-                'https://radio/stream',
-                0,
-            ),
-        ).toBe('radio-1');
+        const sources = [
+            { kind: 'radio' as const, playbackKey: 'radio-1', url: 'https://radio/stream' },
+        ];
+
+        expect(resolveMpvPlaybackKey(sources, 'https://radio/stream', 0)).toBe('radio-1');
+        expect(isMpvPlaybackKeyQueued(sources, 'radio-1')).toBe(true);
+        expect(isMpvPlaybackKeyQueued(sources, 'old-library-song')).toBe(false);
     });
 });
 
@@ -1033,6 +1037,7 @@ describe('AudioStateService server-route verification', () => {
         expect(errorEvent?.detail).toContain('exclusive-contention');
         expect(onEngineError).toHaveBeenCalledWith(
             expect.objectContaining({ cause: 'exclusive-contention' }),
+            'song-1',
         );
         expect(broadcast).toHaveBeenCalledWith(
             expect.objectContaining({

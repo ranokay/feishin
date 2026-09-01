@@ -46,6 +46,13 @@ export interface StreamHeaderProbe {
     contentType: null | string;
 }
 
+export function isMpvPlaybackKeyQueued(
+    sources: readonly (MpvLoadSource | undefined)[],
+    playbackKey: null | string,
+): boolean {
+    return playbackKey === null || sources.some((source) => source?.playbackKey === playbackKey);
+}
+
 export function resolveMpvPlaybackKey(
     sources: readonly (MpvLoadSource | undefined)[],
     path: string,

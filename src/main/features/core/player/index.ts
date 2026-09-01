@@ -22,6 +22,7 @@ import {
     type AudioEngineEvent,
     type AudioSnapshot,
     BIT_PERFECT_PROPERTY_PINS,
+    isMpvPlaybackKeyQueued,
     type MpvLoadSource,
     type PlaybackPolicy,
     resolveMpvPlaybackKey,
@@ -85,8 +86,12 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
         const commandMpv = getMpvInstance();
         const connection = await MpvIpcConnection.connect(socketPath);
         let activeStrictStopKey: null | string = null;
-        const pauseForStrictStop = (stop: StrictPlaybackStop, force = false) => {
-            const key = `${stop.cause}:${stop.detail ?? ''}`;
+        const pauseForStrictStop = (
+            stop: StrictPlaybackStop,
+            playbackKey: null | string,
+            force = false,
+        ) => {
+            const key = `${playbackKey ?? 'unknown'}:${stop.cause}:${stop.detail ?? ''}`;
             if (!force && activeStrictStopKey === key) {
                 return;
             }
@@ -105,8 +110,8 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
             broadcast: (snapshot) => {
                 if (generation === audioStateGeneration) {
                     const strictStop = resolveStrictPlaybackStop(playbackPolicy, 'local', snapshot);
-                    if (strictStop) {
-                        pauseForStrictStop(strictStop);
+                    if (strictStop && isMpvPlaybackKeyQueued(queuedStreams, snapshot.playbackKey)) {
+                        pauseForStrictStop(strictStop, snapshot.playbackKey);
                     } else {
                         activeStrictStopKey = null;
                     }
@@ -114,12 +119,14 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
                 }
             },
             log,
-            onEngineError: (failure) => {
+            onEngineError: (failure, playbackKey) => {
                 if (generation !== audioStateGeneration) {
                     return;
                 }
                 if (playbackPolicy === 'bit-perfect') {
-                    pauseForStrictStop(failure, true);
+                    if (isMpvPlaybackKeyQueued(queuedStreams, playbackKey)) {
+                        pauseForStrictStop(failure, playbackKey, true);
+                    }
                     return;
                 }
                 sendToastToRenderer({

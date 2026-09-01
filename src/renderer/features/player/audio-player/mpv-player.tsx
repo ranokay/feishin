@@ -14,6 +14,7 @@ import {
     usePlayerStore,
     usePlayerVolume,
 } from '/@/renderer/store';
+import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
 import { PlayerStatus } from '/@/shared/types/types';
 
 const PLAY_PAUSE_FADE_DURATION = 300;
@@ -28,7 +29,13 @@ export function MpvPlayer() {
     const { speed } = usePlayerProperties();
     const isMuted = usePlayerMuted();
     const volume = usePlayerVolume();
-    const { audioFadeOnStatusChange, preservePitch } = usePlaybackSettings();
+    const {
+        audioFadeOnStatusChange,
+        playbackPolicy,
+        preservePitch,
+        type: playbackType,
+    } = usePlaybackSettings();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
 
     const [localPlayerStatus, setLocalPlayerStatus] = useState<PlayerStatus>(status);
     const [isTransitioning, setIsTransitioning] = useState(false);
@@ -110,6 +117,14 @@ export function MpvPlayer() {
             onPlayerStatus: async (properties) => {
                 const status = properties.status;
                 const volume = usePlayerStore.getState().player.volume;
+                if (isBitPerfect) {
+                    if (fadeIntervalRef.current) {
+                        clearInterval(fadeIntervalRef.current);
+                        fadeIntervalRef.current = null;
+                    }
+                    setLocalPlayerStatus(status);
+                    return;
+                }
                 if (audioFadeOnStatusChange) {
                     if (status === PlayerStatus.PLAYING) {
                         fadeAndSetStatus(0, volume, PLAY_PAUSE_FADE_DURATION, PlayerStatus.PLAYING);
@@ -134,7 +149,7 @@ export function MpvPlayer() {
                 player.mediaStop();
             },
         },
-        [volume, fadeAndSetStatus, audioFadeOnStatusChange],
+        [volume, fadeAndSetStatus, audioFadeOnStatusChange, isBitPerfect],
     );
 
     // Cleanup fade interval on unmount

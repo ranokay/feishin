@@ -1,6 +1,6 @@
 import { closeModal, openModal } from '@mantine/modals';
 import isElectron from 'is-electron';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
@@ -141,7 +141,19 @@ export const AudioPlayers = () => {
         webAudio,
     } = usePlaybackSettings();
     const { setWebAudio, webAudio: audioContext } = useWebAudio();
-    const [fallbackRequested, setFallbackRequested] = useState(false);
+    const [fallbackRequest, setFallbackRequest] = useState({
+        playbackPolicy,
+        playbackType,
+        requested: false,
+    });
+    const fallbackRequested =
+        fallbackRequest.playbackPolicy === playbackPolicy &&
+        fallbackRequest.playbackType === playbackType &&
+        fallbackRequest.requested;
+    const setFallbackRequested = useCallback(
+        (requested: boolean) => setFallbackRequest({ playbackPolicy, playbackType, requested }),
+        [playbackPolicy, playbackType],
+    );
     const setRadioPlaybackType = useRadioStore((state) => state.actions.setActivePlaybackType);
     const activePlaybackType = resolveFallbackPlaybackType(
         playbackPolicy,
@@ -157,11 +169,7 @@ export const AudioPlayers = () => {
         const retryLocalPlayer = () => setFallbackRequested(false);
         eventEmitter.on('MPV_RELOAD', retryLocalPlayer);
         return () => eventEmitter.off('MPV_RELOAD', retryLocalPlayer);
-    }, []);
-
-    useEffect(() => {
-        setFallbackRequested(false);
-    }, [playbackType]);
+    }, [setFallbackRequested]);
 
     useEffect(() => {
         setRadioPlaybackType(activePlaybackType);

@@ -302,6 +302,14 @@ export const SubsonicController: InternalControllerEndpoint = {
         return null;
     },
     authenticate: async (url, body) => {
+        if (body.action && body.action !== 'password') {
+            throw new Error('Subsonic does not support this authentication method');
+        }
+
+        if (typeof body.password !== 'string' || typeof body.username !== 'string') {
+            throw new Error('Subsonic authentication requires a username and password');
+        }
+
         let credential: string;
         let credentialParams: {
             p?: string;
@@ -1456,6 +1464,10 @@ export const SubsonicController: InternalControllerEndpoint = {
         if (subsonicFeatures[SubsonicExtensions.PLAYBACK_REPORT]) {
             features.reportPlayback = [1];
         }
+
+        if (subsonicFeatures[SubsonicExtensions.TOP_SONGS_BY_ARTIST_ID]) {
+            features.topSongsByArtistId = [1];
+        }
         try {
             const jukeboxStatus = await ssApiClient(apiClientProps).jukeboxControl({
                 query: { action: 'status' },
@@ -1976,21 +1988,33 @@ export const SubsonicController: InternalControllerEndpoint = {
             const directPlayProfiles = getDirectPlayProfiles();
             const transcodingProfiles = getDefaultTranscodingProfiles();
 
-            const transcodeDecision = await ssApiClient(apiClientProps).getTranscodeDecision({
-                body: {
-                    codecProfiles: [],
-                    directPlayProfiles,
-                    maxAudioBitrate: 0,
-                    maxTranscodingAudioBitrate,
-                    name: 'Feishin',
-                    platform: navigator.userAgent,
-                    transcodingProfiles,
-                },
-                query: {
-                    mediaId: id,
-                    mediaType,
-                },
-            });
+            const transcodeDecision = await ssApiClient(apiClientProps)
+                .getTranscodeDecision({
+                    body: {
+                        codecProfiles: [],
+                        directPlayProfiles,
+                        maxAudioBitrate: 0,
+                        maxTranscodingAudioBitrate,
+                        name: 'Feishin',
+                        platform: navigator.userAgent,
+                        transcodingProfiles,
+                    },
+                    query: {
+                        mediaId: id,
+                        mediaType,
+                    },
+                })
+                .catch((error: unknown) => {
+                    logger.warn(
+                        `Failed to request a transcode decision for song ${id}, falling back to direct stream`,
+                        { error },
+                    );
+                    return null;
+                });
+
+            if (!transcodeDecision) {
+                return streamUrl;
+            }
 
             // If the server returns an error for transcodeDecision, fall back to direct stream so that we don't break the player
             if (transcodeDecision.status !== 200) {
@@ -2075,7 +2099,9 @@ export const SubsonicController: InternalControllerEndpoint = {
         if (type === 'community') {
             const res = await ssApiClient(apiClientProps).getTopSongsList({
                 query: {
-                    artist: query.artist,
+                    ...(hasFeature(apiClientProps.server, ServerFeature.TOP_SONGS_BY_ARTIST_ID)
+                        ? { id: query.artistId }
+                        : { artist: query.artist }),
                     count: query.limit,
                 },
             });

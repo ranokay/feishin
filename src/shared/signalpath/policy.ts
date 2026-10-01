@@ -17,7 +17,7 @@ export type PlaybackControlAction =
     | 'toggle-mute';
 export type PlaybackControlStatus = 'paused' | 'playing' | 'stopped';
 export type PlaybackPolicy = (typeof PLAYBACK_POLICIES)[number];
-export type PlaybackPolicyPlayerType = 'jukebox' | 'local' | 'web';
+export type PlaybackPolicyPlayerType = 'dlna' | 'jukebox' | 'local' | 'web';
 
 export function isBitPerfectPlaybackActive(
     policy: PlaybackPolicy,

@@ -49,6 +49,7 @@ import {
     PlayerType,
     TableColumn,
 } from '/@/shared/types/types';
+import { IMAGE_PLACEHOLDER_PRIORITIES } from '/@/shared/utils/image-hash';
 
 const utils = isElectron() ? window.api.utils : null;
 
@@ -79,6 +80,7 @@ const deepMergeIntoState = <T extends Record<string, any>>(
 const HomeItemSchema = z.enum([
     'genres',
     'mostPlayed',
+    'playlists',
     'random',
     'recentlyAdded',
     'recentlyPlayed',
@@ -198,6 +200,8 @@ const GenreTargetSchema = z.enum(['album', 'track']);
 
 const PlaylistTargetSchema = z.enum(['album', 'track']);
 
+const ScrobbleMinimumModeSchema = z.enum(['both', 'percentage', 'seconds']);
+
 const SideQueueTypeSchema = z.enum(['sideDrawerQueue', 'sideQueue']);
 const SideQueueLayoutSchema = z.enum(['horizontal', 'vertical']);
 
@@ -286,6 +290,7 @@ const TranscodingConfigSchema = z.object({
     bitrate: z.number().optional(),
     enabled: z.boolean(),
     format: z.string().optional(),
+    maxSampleRate: z.number().optional(),
 });
 
 const MpvSettingsSchema = z.object({
@@ -542,6 +547,7 @@ export const GeneralSettingsSchema = z.object({
     homeFeature: z.boolean(),
     homeFeatureStyle: z.nativeEnum(HomeFeatureStyle),
     homeItems: z.array(SortableItemSchema(HomeItemSchema)),
+    imagePlaceholderPriority: z.enum(IMAGE_PLACEHOLDER_PRIORITIES),
     imageRes: z.object({
         fullScreenPlayer: z.number(),
         header: z.number(),
@@ -655,6 +661,7 @@ const LyricsSettingsSchema = z.object({
 
 const ScrobbleSettingsSchema = z.object({
     enabled: z.boolean(),
+    minimumMode: ScrobbleMinimumModeSchema,
     notify: z.boolean(),
     scrobbleAtDuration: z.number(),
     scrobbleAtPercentage: z.number(),
@@ -728,6 +735,8 @@ const PlaybackSettingsSchema = z.object({
     mpvProperties: MpvSettingsSchema,
     playbackPolicy: z.enum([...PLAYBACK_POLICIES]),
     preservePitch: z.boolean(),
+    previousLocalVolume: z.number().min(0).max(100).optional(),
+    previousPlayerType: z.nativeEnum(PlayerType).optional(),
     scrobble: ScrobbleSettingsSchema,
     transcode: TranscodingConfigSchema,
     type: z.nativeEnum(PlayerType),
@@ -828,6 +837,14 @@ export const getServerTagAutocompleteName = (source: string): null | string =>
 
 export const toServerTagAutocompleteSource = (tagName: string): string =>
     `${SERVER_TAG_AUTOCOMPLETE_PREFIX}${tagName}`;
+
+export const ScrobbleMinimumMode = {
+    BOTH: 'both',
+    PERCENTAGE: 'percentage',
+    SECONDS: 'seconds',
+} as const;
+
+export type ScrobbleMinimumMode = (typeof ScrobbleMinimumMode)[keyof typeof ScrobbleMinimumMode];
 
 /**
  * This schema is used for validation of the imported settings json
@@ -978,6 +995,7 @@ export enum GenreTarget {
 export enum HomeItem {
     GENRES = 'genres',
     MOST_PLAYED = 'mostPlayed',
+    PLAYLISTS = 'playlists',
     RANDOM = 'random',
     RECENTLY_ADDED = 'recentlyAdded',
     RECENTLY_PLAYED = 'recentlyPlayed',
@@ -1252,6 +1270,7 @@ const defaultHomeItemOrder: HomeItem[] = [
     HomeItem.RECENTLY_RELEASED,
     HomeItem.RECENTLY_PLAYED,
     HomeItem.MOST_PLAYED,
+    HomeItem.PLAYLISTS,
 ];
 
 const homeItems = defaultHomeItemOrder.map((id) => ({
@@ -1362,6 +1381,7 @@ const initialState: SettingsState = {
         homeFeature: true,
         homeFeatureStyle: HomeFeatureStyle.SINGLE,
         homeItems,
+        imagePlaceholderPriority: 'thumbhash',
         imageRes: {
             fullScreenPlayer: 0,
             header: 300,
@@ -2121,8 +2141,11 @@ const initialState: SettingsState = {
         },
         playbackPolicy: 'standard',
         preservePitch: true,
+        previousLocalVolume: undefined,
+        previousPlayerType: undefined,
         scrobble: {
             enabled: true,
+            minimumMode: ScrobbleMinimumMode.BOTH,
             notify: false,
             scrobbleAtDuration: 240,
             scrobbleAtPercentage: 75,
@@ -2939,6 +2962,13 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                 }
 
                 if (version < 34) {
+                    state.general.homeItems.push({
+                        disabled: false,
+                        id: HomeItem.PLAYLISTS,
+                    });
+                }
+
+                if (version < 35) {
                     if (state.playback) {
                         state.playback.playbackPolicy = normalizePlaybackPolicy(
                             state.playback.playbackPolicy,
@@ -2946,7 +2976,7 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
-                if (version < 35) {
+                if (version < 36) {
                     if (state.playback) {
                         state.playback.bitPerfectMuteBehavior = normalizeBitPerfectMuteBehavior(
                             state.playback.bitPerfectMuteBehavior,
@@ -2954,7 +2984,7 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
-                if (version < 36) {
+                if (version < 37) {
                     if (state.playback) {
                         state.playback.deviceProfiles = normalizeDeviceProfiles(
                             state.playback.deviceProfiles,
@@ -2965,7 +2995,7 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                 return persistedState;
             },
             name: 'store_settings',
-            version: 36,
+            version: 37,
         },
     ),
 );
@@ -3083,6 +3113,9 @@ export const useAccent = () => useSettingsStore((state) => state.general.accent,
 
 export const useNativeAspectRatio = () =>
     useSettingsStore((state) => state.general.nativeAspectRatio, shallow);
+
+export const useImagePlaceholderPriority = () =>
+    useSettingsStore((state) => state.general.imagePlaceholderPriority);
 
 export const useButtonSize = () => useSettingsStore((state) => state.general.buttonSize, shallow);
 

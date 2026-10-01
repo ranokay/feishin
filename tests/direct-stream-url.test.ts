@@ -40,7 +40,7 @@ describe('direct stream URL builders', () => {
         ).toBe('https://jellyfin.example/Audio/42/stream?static=true&apiKey=secret');
     });
 
-    it('keeps Jellyfin WEB transcoding unchanged', () => {
+    it('keys Jellyfin WEB transcoding to a per-stream session id', () => {
         expect(
             buildJellyfinStreamUrl({
                 bitrate: 192,
@@ -52,7 +52,23 @@ describe('direct stream URL builders', () => {
                 userId: 'user',
             }),
         ).toBe(
-            'https://jellyfin.example/audio/42/universal?userId=user&deviceId=&audioCodec=opus&apiKey=secret&playSessionId=&container=opus&transcodingProtocol=http&transcodingContainer=opus&maxStreamingBitrate=192000',
+            'https://jellyfin.example/audio/42/universal?userId=user&deviceId=&audioCodec=opus&apiKey=secret&playSessionId=feishin-42-opus-0-0&container=opus&transcodingProtocol=http&transcodingContainer=opus&maxStreamingBitrate=192000',
+        );
+    });
+
+    it('expresses a Jellyfin transcode seek as a start-offset session', () => {
+        expect(
+            buildJellyfinStreamUrl({
+                credential: 'secret',
+                format: 'opus',
+                id: '42',
+                mode: 'transcode',
+                serverUrl: 'https://jellyfin.example',
+                startTime: 12.5,
+                userId: 'user',
+            }),
+        ).toBe(
+            'https://jellyfin.example/audio/42/universal?userId=user&deviceId=&audioCodec=opus&apiKey=secret&playSessionId=feishin-42-opus-0-125000000&container=opus&transcodingProtocol=http&transcodingContainer=opus&startTimeTicks=125000000',
         );
     });
 });

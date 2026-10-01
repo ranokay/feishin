@@ -95,6 +95,9 @@ interface GroupedQueue {
 
 interface State {
     hydrated: boolean;
+    // Runtime-only: true once the mpv engine has finished initializing.
+    // Top-level keys are not persisted (see partialize), same as `hydrated`.
+    mpvInitialized: boolean;
     player: {
         crossfadeDuration: number;
         crossfadeStyle: CrossfadeStyle;
@@ -175,6 +178,11 @@ export function mapShuffledToQueueIndex(shuffledIndex: number, shuffled: number[
     return shuffledIndex;
 }
 
+// We need to use a unique id so that the equalityFn can work if attempting to set the same timestamp
+export function uniqueSeekToTimestamp(timestamp: number) {
+    return `${timestamp}-${nanoid()}`;
+}
+
 // Helper function to add new indexes to shuffled array after current position
 function addIndexesToShuffled(
     shuffled: number[],
@@ -222,9 +230,9 @@ function calculateNextIndex(
             return { nextIndex: currentIndex + 1, shouldStop: false };
         }
     } else {
-        // Repeat none: move to next track, or stop if at the end
+        // Repeat none: move to next track, or loop back and stop if at the end
         if (isLastTrack) {
-            return { nextIndex: currentIndex, shouldStop: true };
+            return { nextIndex: 0, shouldStop: true };
         } else {
             return { nextIndex: currentIndex + 1, shouldStop: false };
         }
@@ -364,6 +372,7 @@ function shouldBlockPlaybackControl(control: 'speed' | 'volume', status: PlayerS
 
 const initialState: State = {
     hydrated: false,
+    mpvInitialized: false,
     player: {
         crossfadeDuration: 5,
         crossfadeStyle: CrossfadeStyle.EQUAL_POWER,
@@ -1141,6 +1150,7 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
 
                     if (shouldStop) {
                         set((state) => {
+                            state.player.index = nextIndex;
                             state.player.status = PlayerStatus.STOPPED;
                             state.player.playerNum = 1;
                             setTimestampStore(0);
@@ -1551,7 +1561,7 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                 ...initialState,
                 setCrossfadeDuration: (duration: number) => {
                     set((state) => {
-                        const normalizedDuration = Math.max(0, Math.min(10, duration));
+                        const normalizedDuration = Math.max(3, Math.min(21, duration));
                         state.player.crossfadeDuration = normalizedDuration;
                     });
                 },
@@ -1630,7 +1640,7 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                         return BIT_PERFECT_EFFECTIVE_VOLUME;
                     }
                     set((state) => {
-                        state.player.volume = volume;
+                        state.player.volume = Math.min(100, Math.max(0, volume));
                     });
                     return get().player.volume;
                 },
@@ -1784,7 +1794,13 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
         ),
         {
             merge: (persistedState: any, currentState: any) => {
-                return merge(currentState, persistedState);
+                const merged = merge(currentState, persistedState);
+
+                if (merged.player) {
+                    merged.player.volume = Math.min(100, Math.max(0, merged.player.volume));
+                }
+
+                return merged;
             },
             migrate: async (persistedState, oldVersion) => {
                 if (oldVersion < 3) {
@@ -1799,7 +1815,12 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                 return persistedState as Partial<PlayerState>;
             },
             name: 'player-store',
-            onRehydrateStorage: () => () => {
+            onRehydrateStorage: () => (state) => {
+                if (!state) return;
+                const playback = useSettingsStore.getState().playback;
+                if (playback.previousLocalVolume !== undefined) {
+                    state.player.volume = Math.min(100, Math.max(0, playback.previousLocalVolume));
+                }
                 usePlayerStoreBase.setState({ hydrated: true });
             },
             partialize: (state) => {
@@ -1897,6 +1918,11 @@ export type AddToQueueByPlayType = Play;
 export type AddToQueueByUniqueId = {
     edge: 'bottom' | 'left' | 'right' | 'top' | null;
     uniqueId: string;
+};
+
+export type AddToQueueOptions = {
+    filter?: (song: Song) => boolean;
+    skipConfirmation?: boolean;
 };
 
 export type AddToQueueType = AddToQueueByPlayType | AddToQueueByUniqueId;
@@ -2280,6 +2306,14 @@ export const usePlayerHydrated = () => {
     return usePlayerStoreBase((state) => state.hydrated);
 };
 
+export const useMpvInitialized = () => {
+    return usePlayerStoreBase((state) => state.mpvInitialized);
+};
+
+export const setMpvInitialized = (mpvInitialized: boolean) => {
+    usePlayerStoreBase.setState({ mpvInitialized });
+};
+
 export const usePlayerVolume = () => {
     return usePlayerStoreBase((state) => state.player.volume);
 };
@@ -2434,9 +2468,4 @@ function toQueueSong(item: Song): QueueSong {
         ...item,
         _uniqueId: nanoid(),
     };
-}
-
-// We need to use a unique id so that the equalityFn can work if attempting to set the same timestamp
-function uniqueSeekToTimestamp(timestamp: number) {
-    return `${timestamp}-${nanoid()}`;
 }

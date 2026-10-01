@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState, WheelEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PopoverPlayQueue } from '/@/renderer/features/now-playing/components/popover-play-queue';
+import { DlnaCastButton } from '/@/renderer/features/player/components/dlna-cast-button';
+import { DlnaVolumeButton } from '/@/renderer/features/player/components/dlna/volume-button';
 import { PlayerConfig } from '/@/renderer/features/player/components/player-config';
 import { CustomPlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
 import { SignalPathBadge } from '/@/renderer/features/player/components/signal-path-badge';
@@ -79,7 +81,6 @@ const calculateVolumeUp = (volume: number, volumeWheelStep: number) => {
 
     return volumeToSet;
 };
-
 const calculateVolumeDown = (volume: number, volumeWheelStep: number) => {
     let volumeToSet: number;
     const newVolumeLessThanZero = volume - volumeWheelStep < 0;
@@ -95,6 +96,7 @@ const calculateVolumeDown = (volume: number, volumeWheelStep: number) => {
 export const RightControls = () => {
     const showRatings = useShowRatings();
     const showFavorites = useShowFavorites();
+    const playbackType = usePlaybackType();
     return (
         <Flex align="flex-end" direction="column" h="100%" px="1rem" py="0.5rem">
             <Group h="calc(100% / 3)">
@@ -102,13 +104,14 @@ export const RightControls = () => {
                 <AutoDJButton />
             </Group>
             <Group align="center" gap="xs" wrap="nowrap">
+                <DlnaCastButton />
                 <SleepTimerButton />
                 <PlayerConfig />
                 <LyricsButton />
                 {showFavorites && <FavoriteButton />}
                 <SignalPathBadge />
                 <QueueButton />
-                <VolumeButton />
+                {playbackType === PlayerType.DLNA ? <DlnaVolumeButton /> : <VolumeButton />}
             </Group>
             <Group h="calc(100% / 3)" />
         </Flex>
@@ -351,43 +354,24 @@ const QueueButton = () => {
     const isSidebarRightExpanded = useSidebarRightExpanded();
     const { setSideBar } = useAppStoreActions();
     const sideQueueType = useSideQueueType();
-
     const { bindings } = useHotkeySettings();
-
     const [popoverOpened, setPopoverOpened] = useState(false);
-
     const handleToggleQueue = () => {
-        if (sideQueueType === 'sideQueue') {
-            setSideBar({ rightExpanded: !isSidebarRightExpanded });
-        } else {
-            setPopoverOpened((prev) => !prev);
-        }
+        if (sideQueueType === 'sideQueue') setSideBar({ rightExpanded: !isSidebarRightExpanded });
+        else setPopoverOpened((prev) => !prev);
     };
-
-    const handlePopoverClose = () => {
-        setPopoverOpened(false);
-    };
-
     useHotkeys([
         [bindings.toggleQueue.isGlobal ? '' : bindings.toggleQueue.hotkey, handleToggleQueue],
     ]);
-
-    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-        e.stopPropagation();
-
-        if (sideQueueType === 'sideQueue') {
-            return handleToggleQueue();
-        }
-    };
-
     if (sideQueueType === 'sideQueue') {
         return (
             <ActionIcon
                 icon={isSidebarRightExpanded ? 'panelRightClose' : 'panelRightOpen'}
-                iconProps={{
-                    size: 'lg',
+                iconProps={{ size: 'lg' }}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleQueue();
                 }}
-                onClick={handleClick}
                 size="sm"
                 tooltip={{
                     label: t('player.viewQueue'),
@@ -397,10 +381,9 @@ const QueueButton = () => {
             />
         );
     }
-
     return (
         <PopoverPlayQueue
-            onClose={handlePopoverClose}
+            onClose={() => setPopoverOpened(false)}
             onToggle={(e) => {
                 e.stopPropagation();
                 handleToggleQueue();
@@ -413,7 +396,6 @@ const QueueButton = () => {
 const LyricsButton = () => {
     const setFullScreenPlayerStore = useSetFullScreenPlayerStore();
     const activeTab = useFullScreenPlayerStore((state) => state.activeTab);
-
     const { setStore } = useFullScreenPlayerStoreActions();
     const { expanded: isFullScreenPlayerExpanded } = useFullScreenPlayerStore();
 
@@ -447,50 +429,31 @@ const LyricsButton = () => {
 const FavoriteButton = () => {
     const currentSong = usePlayerSong();
     const { bindings } = useHotkeySettings();
-
     const addToFavoritesMutation = useCreateFavorite({});
     const removeFromFavoritesMutation = useDeleteFavorite({});
-
     const handleAddToFavorites = (song: QueueSong | undefined) => {
         if (!song?.id) return;
-
         addToFavoritesMutation.mutate({
-            apiClientProps: { serverId: song?._serverId || '' },
-            query: {
-                id: [song.id],
-                type: LibraryItem.SONG,
-            },
+            apiClientProps: { serverId: song._serverId || '' },
+            query: { id: [song.id], type: LibraryItem.SONG },
         });
     };
-
     const handleRemoveFromFavorites = (song: QueueSong | undefined) => {
         if (!song?.id) return;
-
         removeFromFavoritesMutation.mutate({
-            apiClientProps: { serverId: song?._serverId || '' },
-            query: {
-                id: [song.id],
-                type: LibraryItem.SONG,
-            },
+            apiClientProps: { serverId: song._serverId || '' },
+            query: { id: [song.id], type: LibraryItem.SONG },
         });
     };
-
     const handleToggleFavorite = (song: QueueSong | undefined) => {
         if (!song?.id) return;
-
-        if (song.userFavorite) {
-            handleRemoveFromFavorites(song);
-        } else {
-            handleAddToFavorites(song);
-        }
+        song.userFavorite ? handleRemoveFromFavorites(song) : handleAddToFavorites(song);
     };
-
     useFavoritePreviousSongHotkeys({
         handleAddToFavorites,
         handleRemoveFromFavorites,
         handleToggleFavorite,
     });
-
     useHotkeys([
         [
             bindings.favoriteCurrentAdd.isGlobal ? '' : bindings.favoriteCurrentAdd.hotkey,
@@ -505,14 +468,10 @@ const FavoriteButton = () => {
             () => handleToggleFavorite(currentSong),
         ],
     ]);
-
     return (
         <ActionIcon
             icon="favorite"
-            iconProps={{
-                fill: currentSong?.userFavorite ? 'primary' : undefined,
-                size: 'lg',
-            }}
+            iconProps={{ fill: currentSong?.userFavorite ? 'primary' : undefined, size: 'lg' }}
             onClick={(e) => {
                 e.stopPropagation();
                 handleToggleFavorite(currentSong);
@@ -538,7 +497,6 @@ const useFavoritePreviousSongHotkeys = ({
 }) => {
     const { bindings } = useHotkeySettings();
     const { previousSong } = usePlayerData();
-
     useHotkeys([
         [
             bindings.favoritePreviousAdd.isGlobal ? '' : bindings.favoritePreviousAdd.hotkey,
@@ -553,7 +511,6 @@ const useFavoritePreviousSongHotkeys = ({
             () => handleToggleFavorite(previousSong),
         ],
     ]);
-
     return null;
 };
 
@@ -561,20 +518,15 @@ const RatingButton = () => {
     const server = useCurrentServer();
     const currentSong = usePlayerSong();
     const setRating = useSetRating();
-
+    const { bindings } = useHotkeySettings();
     const isSongDefined = Boolean(currentSong?.id);
     const showRating =
         isSongDefined &&
         (server?.type === ServerType.NAVIDROME || server?.type === ServerType.SUBSONIC);
-
     const handleUpdateRating = (rating: number) => {
         if (!currentSong) return;
-
         setRating(currentSong._serverId, [currentSong.id], LibraryItem.SONG, rating);
     };
-
-    const { bindings } = useHotkeySettings();
-
     useHotkeys([
         [bindings.rate0.isGlobal ? '' : bindings.rate0.hotkey, () => handleUpdateRating(0)],
         [bindings.rate1.isGlobal ? '' : bindings.rate1.hotkey, () => handleUpdateRating(1)],
@@ -583,7 +535,6 @@ const RatingButton = () => {
         [bindings.rate4.isGlobal ? '' : bindings.rate4.hotkey, () => handleUpdateRating(4)],
         [bindings.rate5.isGlobal ? '' : bindings.rate5.hotkey, () => handleUpdateRating(5)],
     ]);
-
     return (
         <>
             {showRating && (

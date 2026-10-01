@@ -9,7 +9,7 @@ import {
     SettingOption,
     SettingsSection,
 } from '/@/renderer/features/settings/components/settings-section';
-import { useCurrentServer, usePlayerStatus } from '/@/renderer/store';
+import { useCurrentServer, useMpvInitialized, usePlayerStatus } from '/@/renderer/store';
 import {
     usePlaybackSettings,
     usePlaybackType,
@@ -83,6 +83,7 @@ export const resolveAudioDeviceSettings = (
 
 export const useAudioDevices = (playbackType: PlayerType) => {
     const [audioDevices, setAudioDevices] = useState<AudioDeviceOption[]>([]);
+    const mpvInitialized = useMpvInitialized();
 
     useEffect(() => {
         const fetchAudioDevices = async () => {
@@ -106,7 +107,7 @@ export const useAudioDevices = (playbackType: PlayerType) => {
                             message: t('error.audioDeviceFetchError'),
                         }),
                     );
-            } else if (playbackType === PlayerType.LOCAL && mpvPlayer) {
+            } else if (playbackType === PlayerType.LOCAL && mpvPlayer && mpvInitialized) {
                 try {
                     const devices = await getMpvAudioDevices();
                     const uniqueDevices = devices.filter(
@@ -122,7 +123,7 @@ export const useAudioDevices = (playbackType: PlayerType) => {
         };
 
         fetchAudioDevices();
-    }, [playbackType]);
+    }, [mpvInitialized, playbackType]);
 
     return audioDevices;
 };
@@ -158,6 +159,7 @@ export const AudioSettings = memo(() => {
                   audioDeviceDescription,
               )
             : null;
+    const isCasting = settings.type === PlayerType.DLNA;
 
     // Dynamically build the options for the dropdown
     const selectData = [
@@ -173,6 +175,10 @@ export const AudioSettings = memo(() => {
         selectData.push({ label: 'Jukebox', value: PlayerType.JUKEBOX });
     }
 
+    if (isCasting) {
+        selectData.push({ disabled: true, label: 'DLNA', value: PlayerType.DLNA });
+    }
+
     const audioOptions: SettingOption[] = [
         {
             control: (
@@ -180,7 +186,7 @@ export const AudioSettings = memo(() => {
                     <Select
                         data={selectData}
                         defaultValue={settings.type}
-                        disabled={status === PlayerStatus.PLAYING}
+                        disabled={status === PlayerStatus.PLAYING || isCasting}
                         onChange={(e) => {
                             setSettings({ playback: { type: e as PlayerType } });
                             ipc?.send('settings-set', { property: 'playbackType', value: e });

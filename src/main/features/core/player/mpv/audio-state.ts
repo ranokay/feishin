@@ -59,6 +59,12 @@ export interface AudioStateConnection {
 export type { ServerVerificationRequest };
 
 export interface AudioStateServiceOptions {
+    /**
+     * Cross-restart monotonic id source. Without it a new service restarts at
+     * id 1, and an id collision can hide the new log from lastEventId-gated
+     * consumers. The owner seeds one allocator for every service generation.
+     */
+    allocateEventId?: () => number;
     broadcast?: (snapshot: AudioSnapshot) => void;
     eventLimit?: number;
     intervalMs?: number;
@@ -347,6 +353,7 @@ interface LastServerVerification {
 
 export class AudioStateService {
     private activePlaylistEntryId: null | number = null;
+    private readonly allocateEventId: (() => number) | null;
     private broadcastTimer: NodeJS.Timeout | null = null;
     private readonly connection: AudioStateConnection;
     private disposers: Array<() => void> = [];
@@ -383,6 +390,7 @@ export class AudioStateService {
 
     constructor(connection: AudioStateConnection, options: AudioStateServiceOptions = {}) {
         this.connection = connection;
+        this.allocateEventId = options.allocateEventId ?? null;
         this.onBroadcast = options.broadcast ?? (() => {});
         this.eventLimit = options.eventLimit ?? DEFAULT_EVENT_LIMIT;
         this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
@@ -730,8 +738,13 @@ export class AudioStateService {
     }
 
     private pushEvent(event: PendingAudioEngineEvent): void {
-        const id = this.nextEventId;
-        this.nextEventId += 1;
+        let id: number;
+        if (this.allocateEventId) {
+            id = this.allocateEventId();
+        } else {
+            id = this.nextEventId;
+            this.nextEventId += 1;
+        }
         this.lastEventId = id;
         this.events.push({ ...event, id, time: Date.now() });
         if (this.events.length > this.eventLimit) {

@@ -51,9 +51,15 @@ const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mp
 
 // Observability-only second IPC client. Never routes commands; node-mpv keeps command duty.
 let audioStateService: AudioStateService | null = null;
-// Monotonic across service restarts and log clears, so the renderer's
-// lastEventId-gated event log still refetches when a fallback event appears.
-let audioStateFallbackEventId = 0;
+// One monotonic id source for every event the main process records (service
+// generations and fallback events), so a lastEventId-gated event log always
+// sees a fresh log as an advance.
+let nextAudioEventId = 1;
+const allocateAudioEventId = () => {
+    const id = nextAudioEventId;
+    nextAudioEventId += 1;
+    return id;
+};
 let audioStateFallbackEvents: AudioEngineEvent[] = [];
 let audioStateFallbackSnapshot: AudioSnapshot | null = null;
 let queuedStreams: Array<MpvLoadSource | undefined> = [];
@@ -80,10 +86,10 @@ const publishStrictObservabilityFailure = () => {
     const detail = 'strict property observability unavailable';
     const state = createObservedAudioState();
     state.strictValidationError = detail;
-    audioStateFallbackEventId += 1;
-    audioStateFallbackSnapshot = deriveSnapshot(state, 1, audioStateFallbackEventId);
+    const eventId = allocateAudioEventId();
+    audioStateFallbackSnapshot = deriveSnapshot(state, 1, eventId);
     audioStateFallbackEvents = [
-        { detail, id: audioStateFallbackEventId, time: Date.now(), type: 'strict-invalidated' },
+        { detail, id: eventId, time: Date.now(), type: 'strict-invalidated' },
     ];
     getMainWindow()?.webContents.send('renderer-audio-state-changed', audioStateFallbackSnapshot);
 };
@@ -120,6 +126,7 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
             });
         };
         const service = new AudioStateService(connection, {
+            allocateEventId: allocateAudioEventId,
             broadcast: (snapshot) => {
                 if (generation === audioStateGeneration) {
                     const strictStop = resolveStrictPlaybackStop(playbackPolicy, 'local', snapshot);

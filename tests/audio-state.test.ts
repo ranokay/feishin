@@ -524,6 +524,37 @@ describe('AudioStateService', () => {
         service.dispose();
     });
 
+    it('keeps event ids monotonic across service restarts when sharing an allocator', async () => {
+        let nextId = 1;
+        const allocateEventId = () => nextId++;
+
+        const firstConnection = createStubConnection();
+        const first = new AudioStateService(firstConnection, { allocateEventId });
+        await first.start();
+        firstConnection.emit('property-change', {
+            data: 'coreaudio',
+            event: 'property-change',
+            name: 'current-ao',
+        });
+        const firstId = first.getEvents()[0]?.id;
+
+        const secondConnection = createStubConnection();
+        const second = new AudioStateService(secondConnection, { allocateEventId });
+        await second.start();
+        secondConnection.emit('property-change', {
+            data: 'coreaudio',
+            event: 'property-change',
+            name: 'current-ao',
+        });
+        const secondId = second.getEvents()[0]?.id;
+
+        expect(firstId).toBe(1);
+        expect(secondId).toBeGreaterThan(firstId ?? 0);
+        expect(second.getSnapshot().lastEventId).toBe(secondId);
+        first.dispose();
+        second.dispose();
+    });
+
     it('bounds the event ring and broadcast rate under rapid device flapping', async () => {
         const connection = createStubConnection();
         const snapshots: AudioSnapshot[] = [];

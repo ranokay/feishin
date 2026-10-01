@@ -3,6 +3,7 @@ import type {
     AudioSnapshot,
     DecodedParams,
     Evidence,
+    PhysicalFormatEntry,
     StrictPropertyPin,
 } from '/@/shared/signalpath';
 import type {
@@ -22,6 +23,7 @@ import {
     classifyEndFileError,
     evaluateServerRoute,
     findStrictPropertyViolation,
+    parseCoreAudioFormatLine,
     redactStreamUrl,
     unknownFailure,
 } from '/@/shared/signalpath';
@@ -77,6 +79,7 @@ export interface ObservedAudioState {
     activeFilters: null | string[];
     aoDriver: null | string;
     audioDevice: null | string;
+    availablePhysicalFormats: PhysicalFormatEntry[];
     cacheEofReaching: boolean | null;
     cacheIdle: boolean | null;
     cacheUnderrun: boolean | null;
@@ -121,6 +124,9 @@ export function applyPropertyValue(
             const next = typeof value === 'string' ? value : null;
             if (state.audioDevice !== null && next !== state.audioDevice) {
                 events.push({ detail: next, type: 'device-selected' });
+                // Physical formats belong to the device that logged them.
+                state.availablePhysicalFormats = [];
+                state.physicalFormat = null;
             }
             state.audioDevice = next;
             break;
@@ -160,6 +166,7 @@ export function applyPropertyValue(
             if (next !== state.aoDriver) {
                 if (next === null) {
                     events.push({ detail: state.aoDriver, type: 'device-lost' });
+                    state.availablePhysicalFormats = [];
                     state.physicalFormat = null;
                 } else {
                     events.push({
@@ -224,6 +231,7 @@ export function createObservedAudioState(): ObservedAudioState {
         activeFilters: null,
         aoDriver: null,
         audioDevice: null,
+        availablePhysicalFormats: [],
         cacheEofReaching: null,
         cacheIdle: null,
         cacheUnderrun: null,
@@ -252,6 +260,14 @@ export function deriveSnapshot(state: ObservedAudioState, sequence: number): Aud
         activeFilters: state.activeFilters,
         aoDriver: state.aoDriver,
         audioDevice: state.audioDevice,
+        availablePhysicalFormats:
+            state.availablePhysicalFormats.length > 0
+                ? {
+                      level: 'inferred',
+                      source: 'mpv-log',
+                      value: [...state.availablePhysicalFormats],
+                  }
+                : null,
         cacheEofReaching: state.cacheEofReaching,
         cacheIdle: state.cacheIdle,
         cacheUnderrun: state.cacheUnderrun,
@@ -293,9 +309,6 @@ export function parseAoLogEvent(prefix: string, text: string): null | PendingAud
         /acquir|attempt|enabl|redirect|request|select|trying|using/i.test(detail)
     ) {
         return { detail, type: 'exclusive-attempted' };
-    }
-    if (/physical format/i.test(detail)) {
-        return { detail, type: 'physical-format' };
     }
     // Generic AO-init failure (rate/format/device rejections under any driver).
     if (/failed to initialize|failed to open|could not open|device disappeared/i.test(detail)) {
@@ -487,20 +500,42 @@ export class AudioStateService {
             this.scheduleBroadcast();
         });
         this.subscribe('log-message', (payload) => {
-            const parsed = parseAoLogEvent(
-                String(payload['prefix'] ?? ''),
-                String(payload['text'] ?? ''),
-            );
-            if (!parsed) {
-                return;
+            const prefix = String(payload['prefix'] ?? '');
+            const text = String(payload['text'] ?? '');
+            if (prefix.startsWith('ao/')) {
+                const formatLine = parseCoreAudioFormatLine(text);
+                if (formatLine) {
+                    // ASBD dumps carry device capabilities, not track events:
+                    // "available" builds the physical-format table, "active"
+                    // publishes the format the device settled on.
+                    if (formatLine.role === 'available') {
+                        const entry: PhysicalFormatEntry = {
+                            channels: formatLine.channels,
+                            format: formatLine.mpFormat ?? formatLine.formatId,
+                            label: formatLine.label,
+                            sampleRate: formatLine.sampleRate,
+                        };
+                        if (
+                            !this.state.availablePhysicalFormats.some(
+                                (existing) => existing.label === entry.label,
+                            )
+                        ) {
+                            this.state.availablePhysicalFormats.push(entry);
+                        }
+                        this.scheduleBroadcast();
+                    } else if (formatLine.role === 'active') {
+                        this.state.physicalFormat = {
+                            level: 'inferred',
+                            source: 'mpv-log',
+                            value: formatLine.label,
+                        };
+                        this.record({ detail: formatLine.label, type: 'physical-format' });
+                    }
+                    return;
+                }
             }
-            if (parsed.type === 'physical-format') {
-                this.state.physicalFormat = {
-                    level: 'inferred',
-                    source: 'mpv-log',
-                    value: parsed.detail ?? '',
-                };
-                this.record(parsed);
+            const parsed = parseAoLogEvent(prefix, text);
+            if (!parsed) {
                 return;
             }
             if (parsed.type === 'engine-error') {
@@ -517,6 +552,7 @@ export class AudioStateService {
         });
         this.subscribe('audio-reconfig', () => {
             // Renegotiation invalidates the previous device negotiation evidence.
+            this.state.availablePhysicalFormats = [];
             this.state.physicalFormat = null;
             this.record({ detail: 'device renegotiation', type: 'ao-transition' });
         });

@@ -1,3 +1,4 @@
+export * from './device-capabilities';
 export * from './device-profiles';
 export * from './diagnostics';
 export * from './engine-errors';

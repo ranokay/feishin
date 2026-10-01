@@ -4,6 +4,7 @@ import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
+import { openDeviceCapabilities } from '/@/renderer/features/player/components/device-capabilities-modal';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
     SettingOption,
@@ -213,17 +214,33 @@ export const AudioSettings = memo(() => {
         },
         {
             control: (
-                <Select
-                    clearable
-                    data={audioDevices}
-                    disabled={!isElectron()}
-                    onChange={(e) =>
-                        setSettings({
-                            playback: resolveAudioDeviceSettings(playbackType, audioDevices, e),
-                        })
-                    }
-                    value={selectedDeviceId}
-                />
+                <Group gap="xs" wrap="nowrap">
+                    <Select
+                        clearable
+                        data={audioDevices}
+                        disabled={!isElectron()}
+                        onChange={(e) =>
+                            setSettings({
+                                playback: resolveAudioDeviceSettings(playbackType, audioDevices, e),
+                            })
+                        }
+                        value={selectedDeviceId}
+                    />
+                    {playbackType === PlayerType.LOCAL && selectedDeviceId && (
+                        <ActionIcon
+                            icon="info"
+                            iconProps={{ size: 'md' }}
+                            onClick={() =>
+                                openDeviceCapabilities({
+                                    description: audioDeviceDescription,
+                                    deviceId: selectedDeviceId,
+                                })
+                            }
+                            tooltip={{ label: t('player.deviceCapabilities_title') }}
+                            variant="transparent"
+                        />
+                    )}
+                </Group>
             ),
             description: t('setting.audioDevice', { context: 'description' }),
             isHidden: !isElectron(),

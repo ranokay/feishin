@@ -1,3 +1,4 @@
+import type { PhysicalFormatEntry } from './device-capabilities';
 import type { AudioEngineFailure } from './engine-errors';
 import type { Evidence } from './evidence';
 import type { DecodedParams, OutputParams } from './formats';
@@ -40,6 +41,8 @@ export interface AudioSnapshot {
     activeFilters: null | string[];
     aoDriver: null | string;
     audioDevice: null | string;
+    /** coreaudio_exclusive physical-format list from v-level logs; inferred tier. */
+    availablePhysicalFormats?: Evidence<PhysicalFormatEntry[]> | null;
     cacheEofReaching: boolean | null;
     cacheIdle: boolean | null;
     cacheUnderrun: boolean | null;

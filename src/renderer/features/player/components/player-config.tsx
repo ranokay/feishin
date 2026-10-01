@@ -3,6 +3,7 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
+import { openDeviceCapabilities } from '/@/renderer/features/player/components/device-capabilities-modal';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
     getDefaultAudioDevice,
@@ -304,6 +305,7 @@ const AudioPlayerTypeConfig = () => {
 };
 
 const AudioDeviceConfig = () => {
+    const { t } = useTranslation();
     const status = usePlayerStatus();
     const playbackType = usePlaybackType();
     const playbackSettings = usePlaybackSettings();
@@ -314,25 +316,46 @@ const AudioDeviceConfig = () => {
         playbackType === PlayerType.LOCAL
             ? playbackSettings.mpvAudioDeviceId
             : playbackSettings.audioDeviceId;
+    const selectedDeviceId = audioDeviceId ?? getDefaultAudioDevice(audioDevices, playbackType);
+    const audioDeviceDescription =
+        audioDevices.find((device) => device.value === selectedDeviceId)?.description ??
+        playbackSettings.mpvAudioDeviceDescription ??
+        null;
 
     return (
-        <Select
-            comboboxProps={{ withinPortal: false }}
-            data={audioDevices}
-            disabled={status === PlayerStatus.PLAYING}
-            key={playbackType}
-            onChange={(e) => {
-                setSettings({
-                    playback: {
-                        ...playbackSettings,
-                        ...resolveAudioDeviceSettings(playbackType, audioDevices, e),
-                    },
-                });
-            }}
-            value={audioDeviceId ?? getDefaultAudioDevice(audioDevices, playbackType)}
-            variant="filled"
-            width="100%"
-        />
+        <Group gap="xs" wrap="nowrap">
+            <Select
+                comboboxProps={{ withinPortal: false }}
+                data={audioDevices}
+                disabled={status === PlayerStatus.PLAYING}
+                key={playbackType}
+                onChange={(e) => {
+                    setSettings({
+                        playback: {
+                            ...playbackSettings,
+                            ...resolveAudioDeviceSettings(playbackType, audioDevices, e),
+                        },
+                    });
+                }}
+                value={selectedDeviceId}
+                variant="filled"
+                width="100%"
+            />
+            {playbackType === PlayerType.LOCAL && selectedDeviceId && (
+                <ActionIcon
+                    icon="info"
+                    iconProps={{ size: 'md' }}
+                    onClick={() =>
+                        openDeviceCapabilities({
+                            description: audioDeviceDescription,
+                            deviceId: selectedDeviceId,
+                        })
+                    }
+                    tooltip={{ label: t('player.deviceCapabilities_title') }}
+                    variant="transparent"
+                />
+            )}
+        </Group>
     );
 };
 

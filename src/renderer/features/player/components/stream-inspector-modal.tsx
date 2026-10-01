@@ -142,6 +142,22 @@ export const StreamInspectorModal = () => {
         [events, policy, replayGainMode, snapshot, source],
     );
 
+    const eventLabel = useCallback(
+        (type: AudioEngineEventType) => t(`player.signalPath_event_${type.replace(/-/g, '_')}`),
+        [t],
+    );
+
+    const filteredEvents = useMemo(
+        () =>
+            filterAudioEvents(events, {
+                category: categoryFilter,
+                labelFor: eventLabel,
+                search: searchFilter,
+                severity: severityFilter,
+            }),
+        [categoryFilter, eventLabel, events, searchFilter, severityFilter],
+    );
+
     if (playbackType !== PlayerType.LOCAL) {
         return (
             <Text c="dim" size="sm">
@@ -150,25 +166,24 @@ export const StreamInspectorModal = () => {
         );
     }
 
-    const eventLabel = (type: AudioEngineEventType) =>
-        t(`player.signalPath_event_${type.replace(/-/g, '_')}`);
-
-    const filteredEvents = filterAudioEvents(events, {
-        category: categoryFilter,
-        labelFor: eventLabel,
-        search: searchFilter,
-        severity: severityFilter,
-    });
-
     const clearEvents = () => {
         if (!window.api?.audioState?.clearEvents) {
             return;
         }
         // Invalidate in-flight fetches: their results predate the clear.
         loadGeneration.current += 1;
+        const generation = loadGeneration.current;
         window.api.audioState
             .clearEvents()
-            .then(() => setEvents([]))
+            .then(() => {
+                if (generation === loadGeneration.current) {
+                    setEvents([]);
+                } else {
+                    // A newer event landed and reloaded the log while the clear
+                    // was in flight; it must not be wiped.
+                    loadEvents();
+                }
+            })
             .catch((error) => logger.warn('Failed to clear audio engine event log', { error }));
     };
 

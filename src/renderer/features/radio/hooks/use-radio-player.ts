@@ -9,6 +9,7 @@ import { createWithEqualityFn } from 'zustand/traditional';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { usePlayerStoreBase, useSettingsStore } from '/@/renderer/store';
 import { logger } from '/@/renderer/utils/logger';
+import { resolveRadioQueueRestore } from '/@/shared/signalpath';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
 export type RadioCurrentStationArt = {
@@ -190,16 +191,10 @@ export const useRadioAudioInstance = (playbackType: PlaybackPolicyPlayerType) =>
             return;
         }
 
-        if (currentStreamUrl) {
-            if (!playbackKey) {
-                return;
-            }
-            mpvPlayer.setQueue(
-                { kind: 'radio', playbackKey, url: currentStreamUrl },
-                undefined,
-                !isPlaying,
-            );
-        } else {
+        const restore = resolveRadioQueueRestore({ currentStreamUrl, isPlaying, playbackKey });
+        if (restore) {
+            mpvPlayer.setQueue(restore.stream, undefined, restore.pause);
+        } else if (!currentStreamUrl) {
             mpvPlayer.pause();
         }
     }, [currentStreamUrl, isPlaying, isUsingMpv, playbackKey]);

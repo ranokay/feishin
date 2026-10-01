@@ -17,6 +17,12 @@ export type MpvLoadSource =
     | (ServerVerificationRequest & { kind: 'library'; playbackKey: string })
     | { kind: 'radio'; playbackKey: string; url: string };
 
+export interface RadioQueueRestore {
+    /** True when a paused station must be restored without resuming playback. */
+    pause: boolean;
+    stream: Extract<MpvLoadSource, { kind: 'radio' }>;
+}
+
 export interface ServerRouteEvidence {
     /** Human-readable mismatch reasons; null when no contradiction was found. */
     detail: null | string;
@@ -64,6 +70,30 @@ export function resolveMpvPlaybackKey(
             ? positioned
             : sources.find((candidate) => candidate?.url === path);
     return source?.playbackKey ?? null;
+}
+
+/**
+ * Rebuilds the queue entry for the active radio station so a fresh mpv instance
+ * can resume it. Radio state outlives mpv re-initializations (policy change,
+ * reload, reconnect), but the radio hook only re-queues when its own inputs
+ * change, so the engine restores the station independently.
+ */
+export function resolveRadioQueueRestore(state: {
+    currentStreamUrl: null | string;
+    isPlaying: boolean;
+    playbackKey: null | string;
+}): null | RadioQueueRestore {
+    if (!state.currentStreamUrl || !state.playbackKey) {
+        return null;
+    }
+    return {
+        pause: !state.isPlaying,
+        stream: {
+            kind: 'radio',
+            playbackKey: state.playbackKey,
+            url: state.currentStreamUrl,
+        },
+    };
 }
 
 // Servers label the same container differently across backends; both directions

@@ -30,9 +30,12 @@ import { randomString } from '/@/renderer/utils';
 import { sanitizeCss } from '/@/renderer/utils/sanitize';
 import {
     BIT_PERFECT_MUTE_BEHAVIORS,
+    type DeviceProfile,
     normalizeBitPerfectMuteBehavior,
+    normalizeDeviceProfiles,
     normalizePlaybackPolicy,
     PLAYBACK_POLICIES,
+    resolveEffectivePlaybackPolicy,
 } from '/@/shared/signalpath';
 import { AppTheme } from '/@/shared/themes/app-theme-types';
 import { LibraryItem, LyricSource, SavedCollection } from '/@/shared/types/domain-types';
@@ -705,14 +708,21 @@ const PlayerFilterSchema = z.object({
     ]),
 });
 
+const DeviceProfileSchema = z.object({
+    description: z.string().nullable(),
+    policyOverride: z.enum([...PLAYBACK_POLICIES]),
+});
+
 const PlaybackSettingsSchema = z.object({
     audioDeviceId: z.string().nullable().optional(),
     audioFadeOnStatusChange: z.boolean(),
     bitPerfectMuteBehavior: z.enum([...BIT_PERFECT_MUTE_BEHAVIORS]),
     compressor: CompressorSettingsSchema,
+    deviceProfiles: z.record(z.string(), DeviceProfileSchema),
     equalizer: EqSettingsSchema,
     filters: z.array(PlayerFilterSchema),
     mediaSession: z.boolean(),
+    mpvAudioDeviceDescription: z.string().nullable().optional(),
     mpvAudioDeviceId: z.string().nullable().optional(),
     mpvExtraParameters: z.array(z.string()),
     mpvProperties: MpvSettingsSchema,
@@ -1057,6 +1067,7 @@ export interface SettingsSlice extends z.infer<typeof SettingsStateSchema> {
         setGenreBehavior: (target: GenreTarget) => void;
         setHomeItems: (item: SortableItem<HomeItem>[]) => void;
         setList: (type: ItemListKey, data: DeepPartial<ItemListSettings>) => void;
+        setPlaybackDeviceProfile: (deviceId: string, profile: DeviceProfile | null) => void;
         setPlaybackFilters: (filters: PlayerFilter[]) => void;
         setPlayerItems: (items: SortableItem<PlayerItem>[]) => void;
         setPlaylistBehavior: (target: PlaylistTarget) => void;
@@ -2074,6 +2085,7 @@ const initialState: SettingsState = {
             release: 250,
             threshold: -24,
         },
+        deviceProfiles: {},
         equalizer: {
             bands: [
                 { freq: 31.5, gain: 0 },
@@ -2094,6 +2106,7 @@ const initialState: SettingsState = {
         },
         filters: [],
         mediaSession: false,
+        mpvAudioDeviceDescription: undefined,
         mpvAudioDeviceId: undefined,
         mpvExtraParameters: [],
         mpvProperties: {
@@ -2353,6 +2366,18 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
 
                                 if (listState) {
                                     Object.assign(listState, data);
+                                }
+                            });
+                        },
+                        setPlaybackDeviceProfile: (
+                            deviceId: string,
+                            profile: DeviceProfile | null,
+                        ) => {
+                            set((state) => {
+                                if (profile) {
+                                    state.playback.deviceProfiles[deviceId] = profile;
+                                } else {
+                                    delete state.playback.deviceProfiles[deviceId];
                                 }
                             });
                         },
@@ -2927,10 +2952,18 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
+                if (version < 36) {
+                    if (state.playback) {
+                        state.playback.deviceProfiles = normalizeDeviceProfiles(
+                            state.playback.deviceProfiles,
+                        );
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 35,
+            version: 36,
         },
     ),
 );
@@ -2938,6 +2971,21 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
 export const useSettingsStoreActions = () => useSettingsStore((state) => state.actions);
 
 export const usePlaybackSettings = () => useSettingsStore((state) => state.playback, shallow);
+
+/**
+ * The global policy, overridden by the selected mpv device's profile. Every
+ * behavioral gate (strict controls, startup config, volume lock) reads this;
+ * only the settings UI edits the global policy directly.
+ */
+export const useEffectivePlaybackPolicy = () =>
+    useSettingsStore((state) =>
+        resolveEffectivePlaybackPolicy(
+            state.playback.playbackPolicy,
+            state.playback.deviceProfiles,
+            state.playback.mpvAudioDeviceId,
+            state.playback.mpvAudioDeviceDescription,
+        ),
+    );
 
 export const useTableSettings = (type: ItemListKey) =>
     useSettingsStore((state) => state.lists[type as keyof typeof state.lists]);

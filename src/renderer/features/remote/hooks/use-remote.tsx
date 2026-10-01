@@ -7,6 +7,7 @@ import { useSetRating } from '/@/renderer/features/shared/hooks/use-set-rating';
 import { useCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
 import {
+    useEffectivePlaybackPolicy,
     usePlaybackSettings,
     usePlayerActions,
     usePlayerStore,
@@ -26,7 +27,8 @@ export const useRemote = () => {
     const { mediaSkipForward, setVolume } = usePlayerActions();
     const player = usePlayerStore();
     const storedVolume = usePlayerVolume();
-    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const { type: playbackType } = usePlaybackSettings();
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const effectiveVolume = resolveEffectivePlaybackVolume(
         playbackPolicy,
         playbackType,

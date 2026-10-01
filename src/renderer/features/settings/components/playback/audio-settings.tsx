@@ -22,6 +22,7 @@ import { Group } from '/@/shared/components/group/group';
 import { Select } from '/@/shared/components/select/select';
 import { Switch } from '/@/shared/components/switch/switch';
 import { toast } from '/@/shared/components/toast/toast';
+import { normalizePlaybackPolicy, resolveDeviceProfile } from '/@/shared/signalpath';
 import { ServerFeature } from '/@/shared/types/features-types';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
@@ -46,7 +47,7 @@ const getMpvAudioDevices = async () => {
     }
 };
 
-export type AudioDeviceOption = { label: string; value: string };
+export type AudioDeviceOption = { description?: string; label: string; value: string };
 
 export const getDefaultAudioDevice = (
     devices: AudioDeviceOption[],
@@ -54,6 +55,30 @@ export const getDefaultAudioDevice = (
 ): null | string => {
     const defaultId = playbackType === PlayerType.LOCAL ? 'auto' : 'default';
     return devices.find((d) => d.value === defaultId)?.value ?? devices[0]?.value ?? null;
+};
+
+/**
+ * Picking a device must persist its description too: mpv device ids are not
+ * stable across replug, so the description is the profile fallback key.
+ */
+export const resolveAudioDeviceSettings = (
+    playbackType: PlayerType,
+    devices: AudioDeviceOption[],
+    deviceId: null | string,
+):
+    | { audioDeviceId: null | string }
+    | {
+          mpvAudioDeviceDescription: null | string;
+          mpvAudioDeviceId: null | string;
+      } => {
+    if (playbackType !== PlayerType.LOCAL) {
+        return { audioDeviceId: deviceId };
+    }
+    return {
+        mpvAudioDeviceDescription:
+            devices.find((device) => device.value === deviceId)?.description ?? null,
+        mpvAudioDeviceId: deviceId,
+    };
 };
 
 export const useAudioDevices = (playbackType: PlayerType) => {
@@ -105,7 +130,7 @@ export const useAudioDevices = (playbackType: PlayerType) => {
 export const AudioSettings = memo(() => {
     const { t } = useTranslation();
     const settings = usePlaybackSettings();
-    const { setSettings } = useSettingsStoreActions();
+    const { setPlaybackDeviceProfile, setSettings } = useSettingsStoreActions();
     const status = usePlayerStatus();
     const playbackType = usePlaybackType();
     const { mediaStop } = usePlayer();
@@ -118,6 +143,14 @@ export const AudioSettings = memo(() => {
     const audioDevices = useAudioDevices(playbackType);
     const audioDeviceId =
         playbackType === PlayerType.LOCAL ? settings.mpvAudioDeviceId : settings.audioDeviceId;
+    const audioDeviceDescription =
+        audioDevices.find((device) => device.value === audioDeviceId)?.description ??
+        settings.mpvAudioDeviceDescription ??
+        null;
+    const deviceProfile =
+        playbackType === PlayerType.LOCAL && audioDeviceId
+            ? resolveDeviceProfile(settings.deviceProfiles, audioDeviceId, audioDeviceDescription)
+            : null;
 
     // Dynamically build the options for the dropdown
     const selectData = [
@@ -173,10 +206,7 @@ export const AudioSettings = memo(() => {
                     disabled={!isElectron()}
                     onChange={(e) =>
                         setSettings({
-                            playback:
-                                playbackType === PlayerType.LOCAL
-                                    ? { mpvAudioDeviceId: e }
-                                    : { audioDeviceId: e },
+                            playback: resolveAudioDeviceSettings(playbackType, audioDevices, e),
                         })
                     }
                     value={audioDeviceId ?? getDefaultAudioDevice(audioDevices, playbackType)}
@@ -185,6 +215,48 @@ export const AudioSettings = memo(() => {
             description: t('setting.audioDevice', { context: 'description' }),
             isHidden: !isElectron(),
             title: t('setting.audioDevice'),
+        },
+        {
+            control: (
+                <Select
+                    data={[
+                        {
+                            label: t('setting.devicePlaybackPolicy', { context: 'optionGlobal' }),
+                            value: 'global',
+                        },
+                        {
+                            label: t('setting.playbackPolicy', { context: 'optionStandard' }),
+                            value: 'standard',
+                        },
+                        {
+                            label: t('setting.playbackPolicy', { context: 'optionExclusive' }),
+                            value: 'exclusive',
+                        },
+                        {
+                            label: t('setting.playbackPolicy', { context: 'optionBitPerfect' }),
+                            value: 'bit-perfect',
+                        },
+                    ]}
+                    onChange={(e) => {
+                        if (!audioDeviceId || !e) {
+                            return;
+                        }
+                        const profileKey = deviceProfile?.key ?? audioDeviceId;
+                        if (e === 'global') {
+                            setPlaybackDeviceProfile(profileKey, null);
+                            return;
+                        }
+                        setPlaybackDeviceProfile(profileKey, {
+                            description: audioDeviceDescription,
+                            policyOverride: normalizePlaybackPolicy(e),
+                        });
+                    }}
+                    value={deviceProfile?.profile.policyOverride ?? 'global'}
+                />
+            ),
+            description: t('setting.devicePlaybackPolicy', { context: 'description' }),
+            isHidden: !isElectron() || playbackType !== PlayerType.LOCAL || !audioDeviceId,
+            title: t('setting.devicePlaybackPolicy'),
         },
         {
             control: (

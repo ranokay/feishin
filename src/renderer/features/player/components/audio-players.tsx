@@ -38,6 +38,7 @@ import {
     updateQueueFavorites,
     updateQueueRatings,
     useCurrentServerId,
+    useEffectivePlaybackPolicy,
     usePlaybackSettings,
     usePlaybackType,
     usePlayerActions,
@@ -57,6 +58,7 @@ import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
 import {
     type PlaybackPolicyPlayerType,
+    resolveDeviceProfile,
     resolveFallbackPlaybackType,
     resolveStrictPlaybackStop,
     type StrictPlaybackStop,
@@ -137,9 +139,9 @@ export const AudioPlayers = () => {
     const {
         audioDeviceId,
         mpvProperties: { audioSampleRateHz },
-        playbackPolicy,
         webAudio,
     } = usePlaybackSettings();
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const { setWebAudio, webAudio: audioContext } = useWebAudio();
     const [fallbackRequest, setFallbackRequest] = useState({
         playbackPolicy,
@@ -234,14 +236,29 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
     const currentSong = usePlayerSong();
     const playerStatus = usePlayerStatus();
     const radioPlaybackKey = useRadioPlaybackKey();
-    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const playbackType = usePlaybackType();
+    const playbackPolicy = useEffectivePlaybackPolicy();
+    const playbackSettings = usePlaybackSettings();
     const { mediaPause, mediaPlay } = usePlayerActions();
-    const { setSettings } = useSettingsStoreActions();
+    const { setPlaybackDeviceProfile, setSettings } = useSettingsStoreActions();
     const clearStrictPlaybackStop = useAudioStateStore((state) => state.clearStrictPlaybackStop);
     const syncPlaybackKey = useAudioStateStore((state) => state.syncPlaybackKey);
     const handledStop = useRef<null | string>(null);
     const playbackKey = radioPlaybackKey ?? currentSong?._uniqueId ?? null;
     const strictPlaybackState = retainedStop?.playbackKey === playbackKey ? retainedStop : null;
+    // Continue-in-Standard must also release the device profile when that is
+    // what forced strict playback; otherwise the stop immediately reappears.
+    const deviceProfile =
+        playbackType === PlayerType.LOCAL
+            ? resolveDeviceProfile(
+                  playbackSettings.deviceProfiles,
+                  playbackSettings.mpvAudioDeviceId,
+                  playbackSettings.mpvAudioDeviceDescription,
+              )
+            : null;
+    const deviceProfileKey = deviceProfile?.key ?? null;
+    const deviceProfileDescription = deviceProfile?.profile.description ?? null;
+    const deviceProfileOverride = deviceProfile?.profile.policyOverride ?? null;
     const stop = useMemo(
         () =>
             resolveStrictPlaybackStop(playbackPolicy, playbackType, strictPlaybackState) ??
@@ -294,6 +311,12 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
                     onConfirm={() => {
                         closeModal(STRICT_PLAYBACK_STOP_MODAL_ID);
                         setSettings({ playback: { playbackPolicy: 'standard' } });
+                        if (deviceProfileKey && deviceProfileOverride === 'bit-perfect') {
+                            setPlaybackDeviceProfile(deviceProfileKey, {
+                                description: deviceProfileDescription,
+                                policyOverride: 'standard',
+                            });
+                        }
                         mediaPlay();
                     }}
                 >
@@ -313,11 +336,15 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
         });
     }, [
         clearStrictPlaybackStop,
+        deviceProfileDescription,
+        deviceProfileKey,
+        deviceProfileOverride,
         mediaPause,
         mediaPlay,
         playbackPolicy,
         playbackType,
         playerStatus,
+        setPlaybackDeviceProfile,
         setSettings,
         standardWouldHelp,
         stop,

@@ -14,6 +14,7 @@ import {
 } from '/@/renderer/features/settings/components/settings-section';
 import {
     SettingsState,
+    useEffectivePlaybackPolicy,
     usePlaybackSettings,
     useSettingsStoreActions,
 } from '/@/renderer/store/settings.store';
@@ -36,7 +37,7 @@ export const MpvSettings = memo(() => {
     const { t } = useTranslation();
     const settings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
-    const isBitPerfect = isBitPerfectPlaybackActive(settings.playbackPolicy, settings.type);
+    const isBitPerfect = isBitPerfectPlaybackActive(useEffectivePlaybackPolicy(), settings.type);
     // const { pause } = usePlayerControls();
     // const { clearQueue } = useQueueControls();
 

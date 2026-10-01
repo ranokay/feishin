@@ -6,6 +6,7 @@ import { MpvPlayerEngine, MpvPlayerEngineHandle } from './engine/mpv-player-engi
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
+    useEffectivePlaybackPolicy,
     usePlaybackSettings,
     usePlayerActions,
     usePlayerData,
@@ -29,13 +30,8 @@ export function MpvPlayer() {
     const { speed } = usePlayerProperties();
     const isMuted = usePlayerMuted();
     const volume = usePlayerVolume();
-    const {
-        audioFadeOnStatusChange,
-        playbackPolicy,
-        preservePitch,
-        type: playbackType,
-    } = usePlaybackSettings();
-    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
+    const { audioFadeOnStatusChange, preservePitch, type: playbackType } = usePlaybackSettings();
+    const isBitPerfect = isBitPerfectPlaybackActive(useEffectivePlaybackPolicy(), playbackType);
 
     const [localPlayerStatus, setLocalPlayerStatus] = useState<PlayerStatus>(status);
     const [isTransitioning, setIsTransitioning] = useState(false);

@@ -9,7 +9,10 @@ import { SignalPathBadge } from '/@/renderer/features/player/components/signal-p
 import { SleepTimerButton } from '/@/renderer/features/player/components/sleep-timer-button';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { showBitPerfectVolumeLockedToast } from '/@/renderer/features/player/utils/strict-control-feedback';
-import { useAudioDevices } from '/@/renderer/features/settings/components/playback/audio-settings';
+import {
+    resolveAudioDeviceSettings,
+    useAudioDevices,
+} from '/@/renderer/features/settings/components/playback/audio-settings';
 import {
     ListConfigBooleanControl,
     ListConfigTable,
@@ -25,6 +28,7 @@ import {
     useAppStoreActions,
     useAutoDJSettings,
     useCurrentServer,
+    useEffectivePlaybackPolicy,
     useFullScreenPlayerStore,
     useHotkeySettings,
     usePlaybackSettings,
@@ -604,15 +608,12 @@ const VolumeButton = () => {
 
     const playbackType = usePlaybackType();
     const playbackSettings = usePlaybackSettings();
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const { setSettings } = useSettingsStoreActions();
     const audioDevices = useAudioDevices(playbackType);
-    const isBitPerfect = isBitPerfectPlaybackActive(playbackSettings.playbackPolicy, playbackType);
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const mutePauses = isBitPerfect && playbackSettings.bitPerfectMuteBehavior === 'pause';
-    const displayedVolume = resolveEffectivePlaybackVolume(
-        playbackSettings.playbackPolicy,
-        playbackType,
-        volume,
-    );
+    const displayedVolume = resolveEffectivePlaybackVolume(playbackPolicy, playbackType, volume);
 
     const currentAudioDeviceId =
         playbackType === PlayerType.LOCAL
@@ -622,13 +623,10 @@ const VolumeButton = () => {
     const handleSelectAudioDevice = useCallback(
         (deviceId: null | string) => {
             setSettings({
-                playback:
-                    playbackType === PlayerType.LOCAL
-                        ? { mpvAudioDeviceId: deviceId }
-                        : { audioDeviceId: deviceId },
+                playback: resolveAudioDeviceSettings(playbackType, audioDevices, deviceId),
             });
         },
-        [playbackType, setSettings],
+        [audioDevices, playbackType, setSettings],
     );
 
     const [sliderValue, setSliderValue] = useState(volume);

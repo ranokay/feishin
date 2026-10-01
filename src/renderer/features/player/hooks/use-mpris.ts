@@ -8,6 +8,7 @@ import {
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import {
+    useEffectivePlaybackPolicy,
     usePlaybackSettings,
     usePlayerSong,
     usePlayerStore,
@@ -25,7 +26,8 @@ export const useMPRIS = () => {
     const player = usePlayerStore();
     const currentSong = usePlayerSong();
     const storedVolume = usePlayerVolume();
-    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const { type: playbackType } = usePlaybackSettings();
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const effectiveVolume = resolveEffectivePlaybackVolume(
         playbackPolicy,
         playbackType,

@@ -105,4 +105,21 @@ describe.skipIf(!mpvAvailable)('strict property enforcement over real mpv IPC', 
 
         expect(await commandMpv.getProperty('speed')).toBe(1);
     });
+
+    it('reverts an external gapless-audio=yes attempt so strict playback never resamples', async () => {
+        snapshots = [];
+        const response = await externalClient.request(['set_property', 'gapless-audio', 'yes']);
+        expect(response.error).toBe('success');
+
+        await waitFor(() =>
+            snapshots.some((snapshot) =>
+                snapshot.strictPropertyViolations.some(
+                    (violation) => violation.property === 'gapless-audio',
+                ),
+            ),
+        );
+        await waitFor(() => snapshots.at(-1)?.strictPropertyViolations.length === 0);
+
+        expect(await commandMpv.getProperty('gapless-audio')).toBe('weak');
+    });
 });

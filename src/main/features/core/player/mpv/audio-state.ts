@@ -84,6 +84,7 @@ export interface ObservedAudioState {
     demuxer: DemuxerObservation | null;
     gaplessAudio: null | string;
     lastError: AudioEngineFailure | null;
+    lastOutputSamplerate: null | number;
     muted: boolean | null;
     outputParams: DecodedParams | null;
     physicalFormat: Evidence<string> | null;
@@ -126,6 +127,24 @@ export function applyPropertyValue(
         }
         case 'audio-out-params': {
             const next = readParams(value);
+            const nextRate = next?.samplerate ?? null;
+            if (
+                nextRate !== null &&
+                state.lastOutputSamplerate !== null &&
+                nextRate !== state.lastOutputSamplerate
+            ) {
+                // A changed device rate means the AO reopened at the boundary
+                // (the weak-gapless behavior strict mode pins). It is an honest
+                // brief gap, not an integrity failure. The remembered rate
+                // survives the unavailable observation mpv emits mid-reopen.
+                events.push({
+                    detail: `${formatRate(state.lastOutputSamplerate)} -> ${formatRate(nextRate)}`,
+                    type: 'device-transition',
+                });
+            }
+            if (nextRate !== null) {
+                state.lastOutputSamplerate = nextRate;
+            }
             events.push(...compareParamTransition('output', state.outputParams, next));
             state.outputParams = next;
             break;
@@ -212,6 +231,7 @@ export function createObservedAudioState(): ObservedAudioState {
         demuxer: null,
         gaplessAudio: null,
         lastError: null,
+        lastOutputSamplerate: null,
         muted: null,
         outputParams: null,
         physicalFormat: null,
@@ -885,12 +905,18 @@ function compareParamTransition(
         return [{ detail: `${stage} params unavailable`, type: 'ao-transition' }];
     }
     if (previous.samplerate !== next.samplerate) {
-        return [
-            {
-                detail: `${stage} rate ${formatRate(previous.samplerate)} -> ${formatRate(next.samplerate)}`,
-                type: 'rate-changed',
-            },
-        ];
+        if (stage === 'decoded') {
+            return [
+                {
+                    detail: `${stage} rate ${formatRate(previous.samplerate)} -> ${formatRate(next.samplerate)}`,
+                    type: 'rate-changed',
+                },
+            ];
+        }
+        // Output rate changes are emitted by the caller as device transitions,
+        // so a boundary stays visible even when the observation passes through
+        // an unavailable value mid-reopen.
+        return [];
     }
     if (previous.format !== next.format || previous.channels !== next.channels) {
         return [

@@ -124,7 +124,11 @@ export function filterPolicyExtraParameters(
     }
     return parameters.filter((parameter) => {
         const normalized = parameter.trim();
-        return normalized !== '--volume-gain' && !normalized.startsWith('--volume-gain=');
+        const isVolumeGain =
+            normalized === '--volume-gain' || normalized.startsWith('--volume-gain=');
+        const isGaplessAudio =
+            normalized === '--gapless-audio' || normalized.startsWith('--gapless-audio=');
+        return !isVolumeGain && !isGaplessAudio;
     });
 }
 

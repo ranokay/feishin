@@ -27,6 +27,7 @@ describe('audio event taxonomy', () => {
         expect(audioEventCategory('track-ended')).toBe('lifecycle');
         expect(audioEventCategory('playlist-advanced')).toBe('lifecycle');
         expect(audioEventCategory('device-opened')).toBe('device');
+        expect(audioEventCategory('device-transition')).toBe('device');
         expect(audioEventCategory('rate-changed')).toBe('device');
         expect(audioEventCategory('filters-changed')).toBe('filters');
         expect(audioEventCategory('format-changed')).toBe('decoder');
@@ -38,6 +39,7 @@ describe('audio event taxonomy', () => {
         expect(audioEventSeverity('exclusive-failed')).toBe('error');
         expect(audioEventSeverity('connection-lost')).toBe('error');
         expect(audioEventSeverity('device-lost')).toBe('warning');
+        expect(audioEventSeverity('device-transition')).toBe('info');
         expect(audioEventSeverity('server-route-resolved')).toBe('info');
         expect(audioEventSeverity('playlist-advanced')).toBe('debug');
     });

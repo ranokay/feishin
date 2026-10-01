@@ -17,6 +17,10 @@ export interface ResolvedDeviceProfile {
 // the default selection.
 const MPV_DEFAULT_DEVICE_ID = 'auto';
 
+// Assigning these keys would mutate the map's prototype instead of adding an
+// entry; persisted payloads are untrusted, so drop them.
+const PROTOTYPE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 export function normalizeDeviceDescription(value: null | string | undefined): null | string {
     const normalized = value?.trim().replace(/\s+/g, ' ').toLowerCase();
     return normalized ? normalized : null;
@@ -36,7 +40,10 @@ export function normalizeDeviceProfiles(value: unknown): DeviceProfileMap {
     const profiles: DeviceProfileMap = {};
     for (const [key, entry] of Object.entries(value)) {
         const deviceId = key.trim();
-        if (!deviceId || !entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        if (!deviceId || PROTOTYPE_KEYS.has(deviceId)) {
+            continue;
+        }
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
             continue;
         }
         const candidate = entry as { description?: unknown; policyOverride?: unknown };
@@ -60,12 +67,17 @@ export function normalizeMpvDeviceId(deviceId: null | string | undefined): strin
  * Resolves the profile for a device: exact mpv id first, then a unique
  * normalized-description match for replug stability. Ambiguous descriptions
  * resolve to null so a shared name never silently applies the wrong policy.
+ * A missing map (corrupt persisted state) resolves to no profile.
  */
 export function resolveDeviceProfile(
-    profiles: DeviceProfileMap,
+    profiles: DeviceProfileMap | null | undefined,
     deviceId: null | string | undefined,
     description: null | string | undefined,
 ): null | ResolvedDeviceProfile {
+    if (!profiles) {
+        return null;
+    }
+
     const deviceKey = normalizeMpvDeviceId(deviceId);
     if (Object.hasOwn(profiles, deviceKey)) {
         const profile = profiles[deviceKey];
@@ -92,7 +104,7 @@ export function resolveDeviceProfile(
 
 export function resolveEffectivePlaybackPolicy(
     globalPolicy: PlaybackPolicy,
-    profiles: DeviceProfileMap,
+    profiles: DeviceProfileMap | null | undefined,
     deviceId: null | string | undefined,
     description: null | string | undefined,
 ): PlaybackPolicy {

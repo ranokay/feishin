@@ -57,7 +57,8 @@ function VisualizerSystemAudioBridge() {
         useDisclosure(false);
 
     const isExclusiveModeEnabled = audioExclusiveMode === 'yes';
-    const isBitPerfect = isBitPerfectPlaybackActive(useEffectivePlaybackPolicy(), playbackType);
+    const playbackPolicy = useEffectivePlaybackPolicy();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const isSystemAudioBlocked = isExclusiveModeEnabled || isBitPerfect;
     const isVisualizerBlockedByPlaybackPolicy =
         isElectron() &&

@@ -432,8 +432,9 @@ export const PlaybackSpeedSlider = () => {
     const speed = usePlayerSpeed();
     const { setSpeed } = usePlayerActions();
     const playbackType = usePlaybackType();
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const { bpm } = usePlayerSongProperties(['bpm']) ?? {};
-    const isBitPerfect = isBitPerfectPlaybackActive(useEffectivePlaybackPolicy(), playbackType);
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const displayedSpeed = isBitPerfect ? 1 : speed;
 
     const formatPlaybackSpeedSliderLabel = useMemo(
@@ -481,7 +482,8 @@ export const PitchControls = () => {
     const speed = usePlayerSpeed();
     const { setSpeed } = usePlayerActions();
     const playbackType = usePlaybackType();
-    const isBitPerfect = isBitPerfectPlaybackActive(useEffectivePlaybackPolicy(), playbackType);
+    const playbackPolicy = useEffectivePlaybackPolicy();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const displayedSpeed = isBitPerfect ? 1 : speed;
 
     const speedToPitch = (speed: number) => {

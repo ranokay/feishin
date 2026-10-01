@@ -141,11 +141,11 @@ export const SignalPathBadge = () => {
             setPlaybackDeviceProfile(deviceProfile.key, null);
             return;
         }
-        // Installs upgraded with an id saved before descriptions existed have no
-        // stored description; resolve it once so the profile survives a replug.
+        // Prefer the live description: the stored one may be stale or missing on
+        // installs that picked the device before descriptions were persisted.
         const description =
-            playbackSettings.mpvAudioDeviceDescription ??
             (await getMpvAudioDevices()).find((device) => device.value === deviceId)?.description ??
+            playbackSettings.mpvAudioDeviceDescription ??
             null;
         setPlaybackDeviceProfile(deviceId, {
             description,
@@ -230,7 +230,7 @@ export const SignalPathBadge = () => {
                     <StageRow item={model.device} label={t('player.signalPath_stageDevice')} />
                     <Button
                         fullWidth
-                        onClick={() => toggleDeviceProfile()}
+                        onClick={() => void toggleDeviceProfile()}
                         size="compact-xs"
                         variant="light"
                     >

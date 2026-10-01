@@ -271,7 +271,8 @@ export const EqSettings = memo(() => {
     const { t } = useTranslation();
     const settings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
-    const isBitPerfect = isBitPerfectPlaybackActive(useEffectivePlaybackPolicy(), settings.type);
+    const playbackPolicy = useEffectivePlaybackPolicy();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, settings.type);
 
     // Ref pattern to avoid stale closure when reading webAudio DSP nodes.
     // webAudio?.dsp is undefined at callback creation time; the closure

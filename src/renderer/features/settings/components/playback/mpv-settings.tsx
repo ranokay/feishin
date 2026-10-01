@@ -37,7 +37,8 @@ export const MpvSettings = memo(() => {
     const { t } = useTranslation();
     const settings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
-    const isBitPerfect = isBitPerfectPlaybackActive(useEffectivePlaybackPolicy(), settings.type);
+    const playbackPolicy = useEffectivePlaybackPolicy();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, settings.type);
     // const { pause } = usePlayerControls();
     // const { clearQueue } = useQueueControls();
 

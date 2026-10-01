@@ -109,6 +109,11 @@ describe('resolveDeviceProfile', () => {
         expect(resolveDeviceProfile(profiles, '', '  ')).toBeNull();
         expect(resolveDeviceProfile({}, USB_DAC_ID, USB_DAC_DESCRIPTION)).toBeNull();
     });
+
+    it('tolerates a missing profile map from corrupt persisted state', () => {
+        expect(resolveDeviceProfile(undefined, USB_DAC_ID, USB_DAC_DESCRIPTION)).toBeNull();
+        expect(resolveDeviceProfile(null, USB_DAC_ID, USB_DAC_DESCRIPTION)).toBeNull();
+    });
 });
 
 describe('resolveEffectivePlaybackPolicy', () => {
@@ -118,6 +123,9 @@ describe('resolveEffectivePlaybackPolicy', () => {
         );
         expect(
             resolveEffectivePlaybackPolicy('standard', {}, USB_DAC_ID, USB_DAC_DESCRIPTION),
+        ).toBe('standard');
+        expect(
+            resolveEffectivePlaybackPolicy('standard', null, USB_DAC_ID, USB_DAC_DESCRIPTION),
         ).toBe('standard');
     });
 
@@ -219,6 +227,22 @@ describe('normalizeDeviceProfiles', () => {
                 'wasapi/{guid}': 'nope',
             }),
         ).toEqual({});
+    });
+
+    it('drops prototype-mutating keys from persisted payloads', () => {
+        // JSON.parse creates own properties, including a literal __proto__ key.
+        const persisted = JSON.parse(
+            '{"__proto__":{"description":"evil","policyOverride":"bit-perfect"},' +
+                '"constructor":{"policyOverride":"bit-perfect"},' +
+                '"usb-dac":{"policyOverride":"standard"}}',
+        ) as unknown;
+
+        const normalized = normalizeDeviceProfiles(persisted);
+
+        expect(normalized).toEqual({
+            'usb-dac': { description: null, policyOverride: 'standard' },
+        });
+        expect(Object.getPrototypeOf(normalized)).toBe(Object.prototype);
     });
 
     it('coerces a missing description to null', () => {

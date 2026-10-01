@@ -31,7 +31,8 @@ export const useMainPlayerListener = () => {
     const isRadioActive = useIsRadioActive();
     const { type: playbackType } = usePlaybackSettings();
     const volumeWheelStep = useVolumeWheelStep();
-    const isBitPerfect = isBitPerfectPlaybackActive(useEffectivePlaybackPolicy(), playbackType);
+    const playbackPolicy = useEffectivePlaybackPolicy();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const {
         decreaseVolume,
         increaseVolume,

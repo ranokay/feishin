@@ -31,7 +31,8 @@ export function MpvPlayer() {
     const isMuted = usePlayerMuted();
     const volume = usePlayerVolume();
     const { audioFadeOnStatusChange, preservePitch, type: playbackType } = usePlaybackSettings();
-    const isBitPerfect = isBitPerfectPlaybackActive(useEffectivePlaybackPolicy(), playbackType);
+    const playbackPolicy = useEffectivePlaybackPolicy();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
 
     const [localPlayerStatus, setLocalPlayerStatus] = useState<PlayerStatus>(status);
     const [isTransitioning, setIsTransitioning] = useState(false);

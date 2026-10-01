@@ -2374,6 +2374,8 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                             profile: DeviceProfile | null,
                         ) => {
                             set((state) => {
+                                // A corrupt persisted map may be null despite the type.
+                                state.playback.deviceProfiles ??= {};
                                 if (profile) {
                                     state.playback.deviceProfiles[deviceId] = profile;
                                 } else {

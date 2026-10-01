@@ -3,11 +3,11 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
-import { openDeviceCapabilities } from '/@/renderer/features/player/components/device-capabilities-modal';
+import { DeviceCapabilitiesButton } from '/@/renderer/features/player/components/device-capabilities-modal';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
-    getDefaultAudioDevice,
     resolveAudioDeviceSettings,
+    resolveSelectedAudioDevice,
     useAudioDevices,
 } from '/@/renderer/features/settings/components/playback/audio-settings';
 import {
@@ -305,7 +305,6 @@ const AudioPlayerTypeConfig = () => {
 };
 
 const AudioDeviceConfig = () => {
-    const { t } = useTranslation();
     const status = usePlayerStatus();
     const playbackType = usePlaybackType();
     const playbackSettings = usePlaybackSettings();
@@ -316,11 +315,13 @@ const AudioDeviceConfig = () => {
         playbackType === PlayerType.LOCAL
             ? playbackSettings.mpvAudioDeviceId
             : playbackSettings.audioDeviceId;
-    const selectedDeviceId = audioDeviceId ?? getDefaultAudioDevice(audioDevices, playbackType);
-    const audioDeviceDescription =
-        audioDevices.find((device) => device.value === selectedDeviceId)?.description ??
-        playbackSettings.mpvAudioDeviceDescription ??
-        null;
+    const { description: audioDeviceDescription, id: selectedDeviceId } =
+        resolveSelectedAudioDevice(
+            audioDevices,
+            playbackType,
+            audioDeviceId,
+            playbackSettings.mpvAudioDeviceDescription,
+        );
 
     return (
         <Group gap="xs" wrap="nowrap">
@@ -342,17 +343,9 @@ const AudioDeviceConfig = () => {
                 width="100%"
             />
             {playbackType === PlayerType.LOCAL && selectedDeviceId && (
-                <ActionIcon
-                    icon="info"
-                    iconProps={{ size: 'md' }}
-                    onClick={() =>
-                        openDeviceCapabilities({
-                            description: audioDeviceDescription,
-                            deviceId: selectedDeviceId,
-                        })
-                    }
-                    tooltip={{ label: t('player.deviceCapabilities_title') }}
-                    variant="transparent"
+                <DeviceCapabilitiesButton
+                    description={audioDeviceDescription}
+                    deviceId={selectedDeviceId}
                 />
             )}
         </Group>

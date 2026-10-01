@@ -7,6 +7,8 @@ import { EvidenceDot } from './signal-path-rows';
 
 import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
 import { useEffectivePlaybackPolicy } from '/@/renderer/store/settings.store';
+import { getPlatform } from '/@/renderer/utils/platform';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Badge } from '/@/shared/components/badge/badge';
 import { Group } from '/@/shared/components/group/group';
 import { Stack } from '/@/shared/components/stack/stack';
@@ -18,7 +20,6 @@ import {
     type DeviceCapabilityEntry,
     type DeviceCapabilityField,
     type DeviceCapabilityReason,
-    type Platform,
 } from '/@/shared/signalpath';
 
 const FIELD_KEY: Record<DeviceCapabilityField, string> = {
@@ -31,19 +32,13 @@ const FIELD_KEY: Record<DeviceCapabilityField, string> = {
 };
 
 const REASON_KEY: Record<DeviceCapabilityReason, string> = {
+    'device-not-active': 'reasonDeviceNotActive',
     'dsd-unsupported': 'reasonDsd',
+    'exclusive-session-pending': 'reasonExclusiveSessionPending',
     'exclusive-session-required': 'reasonExclusiveSession',
     'hardware-volume-unavailable': 'reasonHardwareVolume',
     'no-session': 'reasonNoSession',
     'platform-unavailable': 'reasonPlatform',
-};
-
-const currentPlatform = (): Platform => {
-    const utils = window.api?.utils;
-    if (utils?.isMacOS?.()) {
-        return 'darwin';
-    }
-    return utils?.isWindows?.() ? 'win32' : 'linux';
 };
 
 const CapabilityRow = ({ entry }: { entry: DeviceCapabilityEntry }) => {
@@ -152,9 +147,10 @@ export const DeviceCapabilitiesModal = ({
                 availablePhysicalFormats: snapshot?.availablePhysicalFormats?.value ?? null,
                 deviceDescription,
                 deviceId,
+                observedDeviceId: snapshot?.audioDevice ?? null,
                 outputParams: snapshot?.outputParams ?? null,
                 physicalFormat: snapshot?.physicalFormat ?? null,
-                platform: currentPlatform(),
+                platform: getPlatform(),
                 requestedExclusive: policy === 'bit-perfect' || policy === 'exclusive',
                 route: snapshot?.aoDriver ?? null,
             }),
@@ -186,4 +182,24 @@ export const openDeviceCapabilities = ({
         size: 'lg',
         title: t('player.deviceCapabilities_title'),
     });
+};
+
+export const DeviceCapabilitiesButton = ({
+    description,
+    deviceId,
+}: {
+    description: null | string;
+    deviceId: string;
+}) => {
+    const { t: translate } = useTranslation();
+
+    return (
+        <ActionIcon
+            icon="info"
+            iconProps={{ size: 'md' }}
+            onClick={() => openDeviceCapabilities({ description, deviceId })}
+            tooltip={{ label: translate('player.deviceCapabilities_title') }}
+            variant="transparent"
+        />
+    );
 };

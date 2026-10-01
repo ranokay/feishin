@@ -22,10 +22,10 @@ import {
     useSettingsStore,
 } from '/@/renderer/store';
 import { logger } from '/@/renderer/utils/logger';
+import { getPlatform } from '/@/renderer/utils/platform';
 import {
     filterPolicyExtraParameters,
     type MpvLoadSource,
-    type Platform,
     policyStartupConfig,
     resolveRadioQueueRestore,
 } from '/@/shared/signalpath';
@@ -127,11 +127,7 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             // Reset initialization state
             hasPopulatedQueueRef.current = false;
 
-            const platform: Platform = window.api?.utils?.isMacOS?.()
-                ? 'darwin'
-                : window.api?.utils?.isWindows?.()
-                  ? 'win32'
-                  : 'linux';
+            const platform = getPlatform();
 
             // Merge the policy-derived startup config (AO pinning, exclusive
             // flags, strict pins) at the existing initialization choke point.

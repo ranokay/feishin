@@ -835,6 +835,8 @@
         "deviceCapabilities_active": "Active",
         "deviceCapabilities_reasonPlatform": "mpv exposes no physical-format list on Windows or Linux; only the macOS coreaudio exclusive driver logs its device formats.",
         "deviceCapabilities_reasonExclusiveSession": "Physical formats are only logged by the macOS coreaudio exclusive driver. Play in Exclusive or Bit-Perfect mode to negotiate a format.",
+        "deviceCapabilities_reasonExclusiveSessionPending": "A strict session is already requested, but mpv has not logged the device's physical-format list yet. It appears once the device finishes negotiating.",
+        "deviceCapabilities_reasonDeviceNotActive": "mpv currently has a different output device open than the one selected here, so the active session's formats are not shown.",
         "deviceCapabilities_reasonNoSession": "mpv has not reported this field yet. Start playback to populate it.",
         "deviceCapabilities_reasonDsd": "mpv has no native DSD or DoP output path; DSD sources are decoded to PCM.",
         "deviceCapabilities_reasonHardwareVolume": "mpv does not expose the device hardware volume; volume is applied as software gain.",

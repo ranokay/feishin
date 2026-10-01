@@ -2,6 +2,8 @@ import type { ConfidenceLevel, Evidence } from './evidence';
 import type { DecodedParams } from './formats';
 import type { Platform } from './policy';
 
+import { normalizeMpvDeviceId } from './device-profiles';
+
 export interface CoreAudioFormatLine extends PhysicalFormatEntry {
     bitsPerChannel: null | number;
     formatId: null | string;
@@ -41,7 +43,7 @@ export const DEVICE_CAPABILITY_FIELDS = [
 export interface DeviceCapabilityEntry {
     /** The active row of a physical-format table, when one matches. */
     activeFormat: null | PhysicalFormatEntry;
-    detail: null | string;
+    detail: 'exclusive-requested' | null;
     field: DeviceCapabilityField;
     formats: null | PhysicalFormatEntry[];
     level: ConfidenceLevel;
@@ -56,6 +58,8 @@ export interface DeviceCapabilityInput {
     availablePhysicalFormats: null | PhysicalFormatEntry[];
     deviceDescription: null | string;
     deviceId: null | string;
+    /** Device id mpv reports as configured; null when no session was observed. */
+    observedDeviceId: null | string;
     outputParams: DecodedParams | null;
     physicalFormat: Evidence<string> | null;
     platform: Platform;
@@ -64,7 +68,9 @@ export interface DeviceCapabilityInput {
 }
 
 export type DeviceCapabilityReason =
+    | 'device-not-active'
     | 'dsd-unsupported'
+    | 'exclusive-session-pending'
     | 'exclusive-session-required'
     | 'hardware-volume-unavailable'
     | 'no-session'
@@ -89,24 +95,13 @@ export function assembleDeviceCapabilities(input: DeviceCapabilityInput): Device
     const formats = input.availablePhysicalFormats ?? [];
     const activeFormat =
         formats.find((format) => format.label === input.physicalFormat?.value) ?? null;
+    const deviceConfirmed = isSelectedDeviceActive(input);
 
     return [
-        {
-            activeFormat: null,
-            detail: null,
-            field: 'device',
-            formats: null,
-            level: input.deviceId ? 'confirmed' : 'unknown',
-            reason: input.deviceId ? null : 'no-session',
-            value: input.deviceId
-                ? input.deviceDescription
-                    ? `${input.deviceId} - ${input.deviceDescription}`
-                    : input.deviceId
-                : null,
-        },
+        deviceEntry(input, deviceConfirmed),
         routeEntry(input),
         outputEntry(input),
-        physicalFormatsEntry(input, formats, activeFormat),
+        physicalFormatsEntry(input, formats, activeFormat, deviceConfirmed),
         {
             activeFormat: null,
             detail: null,
@@ -163,13 +158,58 @@ export function parseCoreAudioFormatLine(text: string): CoreAudioFormatLine | nu
     };
 }
 
+function deviceEntry(
+    input: DeviceCapabilityInput,
+    deviceConfirmed: boolean,
+): DeviceCapabilityEntry {
+    if (!input.deviceId) {
+        return {
+            activeFormat: null,
+            detail: null,
+            field: 'device',
+            formats: null,
+            level: 'unknown',
+            reason: 'no-session',
+            value: null,
+        };
+    }
+    return {
+        activeFormat: null,
+        detail: null,
+        field: 'device',
+        formats: null,
+        level: deviceConfirmed ? 'confirmed' : 'requested',
+        reason: null,
+        value: input.deviceDescription
+            ? `${input.deviceId} - ${input.deviceDescription}`
+            : input.deviceId,
+    };
+}
+
 function formatRate(rate: number): string {
     return `${Number.isInteger(rate) ? rate : rate.toFixed(1)} Hz`;
 }
 
+/** mpv's observed configured device matches the picker selection. */
+function isSelectedDeviceActive(input: DeviceCapabilityInput): boolean {
+    return (
+        input.deviceId !== null &&
+        input.observedDeviceId !== null &&
+        normalizeMpvDeviceId(input.deviceId) === normalizeMpvDeviceId(input.observedDeviceId)
+    );
+}
+
 function outputEntry(input: DeviceCapabilityInput): DeviceCapabilityEntry {
     const params = input.outputParams;
-    if (!params) {
+    const parts = [
+        params?.format ?? null,
+        params?.samplerate !== null && params?.samplerate !== undefined
+            ? `${params.samplerate} Hz`
+            : null,
+        params?.channels !== null && params?.channels !== undefined ? `${params.channels}ch` : null,
+    ].filter((part): part is string => part !== null);
+
+    if (parts.length === 0) {
         return {
             activeFormat: null,
             detail: null,
@@ -187,7 +227,7 @@ function outputEntry(input: DeviceCapabilityInput): DeviceCapabilityEntry {
         formats: null,
         level: 'confirmed',
         reason: null,
-        value: `${params.format ?? '?'} / ${params.samplerate ?? '?'} Hz / ${params.channels ?? '?'}ch`,
+        value: parts.join(' / '),
     };
 }
 
@@ -195,8 +235,9 @@ function physicalFormatsEntry(
     input: DeviceCapabilityInput,
     formats: PhysicalFormatEntry[],
     activeFormat: null | PhysicalFormatEntry,
+    deviceConfirmed: boolean,
 ): DeviceCapabilityEntry {
-    if (formats.length > 0) {
+    if (formats.length > 0 && deviceConfirmed) {
         return {
             activeFormat,
             detail: null,
@@ -213,9 +254,22 @@ function physicalFormatsEntry(
         field: 'physicalFormats',
         formats: null,
         level: 'unknown',
-        reason: input.platform === 'darwin' ? 'exclusive-session-required' : 'platform-unavailable',
+        reason: physicalFormatsReason(input, deviceConfirmed),
         value: null,
     };
+}
+
+function physicalFormatsReason(
+    input: DeviceCapabilityInput,
+    deviceConfirmed: boolean,
+): DeviceCapabilityReason {
+    if (input.platform !== 'darwin') {
+        return 'platform-unavailable';
+    }
+    if (input.deviceId !== null && input.observedDeviceId !== null && !deviceConfirmed) {
+        return 'device-not-active';
+    }
+    return input.requestedExclusive ? 'exclusive-session-pending' : 'exclusive-session-required';
 }
 
 function routeEntry(input: DeviceCapabilityInput): DeviceCapabilityEntry {

@@ -17,6 +17,7 @@ const baseInput: DeviceCapabilityInput = {
     availablePhysicalFormats: null,
     deviceDescription: 'BuiltInSpeakerDevice',
     deviceId: 'coreaudio/BuiltInSpeakerDevice',
+    observedDeviceId: 'coreaudio/BuiltInSpeakerDevice',
     outputParams: { channels: 2, format: 'float', samplerate: 96000 },
     physicalFormat: {
         level: 'inferred',
@@ -145,10 +146,19 @@ describe('assembleDeviceCapabilities', () => {
     });
 
     it('marks non-derivable fields unknown with a reason on every platform', () => {
-        const darwin = assembleDeviceCapabilities(baseInput);
-        const darwinFormats = darwin.find((entry) => entry.field === 'physicalFormats');
+        const pending = assembleDeviceCapabilities(baseInput);
+        expect(pending.find((entry) => entry.field === 'physicalFormats')).toMatchObject({
+            level: 'unknown',
+            reason: 'exclusive-session-pending',
+            value: null,
+        });
 
-        expect(darwinFormats).toMatchObject({
+        const darwin = assembleDeviceCapabilities({
+            ...baseInput,
+            requestedExclusive: false,
+            route: 'coreaudio',
+        });
+        expect(darwin.find((entry) => entry.field === 'physicalFormats')).toMatchObject({
             level: 'unknown',
             reason: 'exclusive-session-required',
             value: null,
@@ -171,11 +181,55 @@ describe('assembleDeviceCapabilities', () => {
         });
     });
 
+    it('downgrades the device row when mpv has a different device configured', () => {
+        const entries = assembleDeviceCapabilities({
+            ...baseInput,
+            availablePhysicalFormats: [
+                {
+                    channels: 2,
+                    format: 'float',
+                    label: '96000 Hz / 32-bit / 2ch / float',
+                    sampleRate: 96000,
+                },
+            ],
+            observedDeviceId: 'coreaudio/USBDAC',
+        });
+        const byField = Object.fromEntries(entries.map((entry) => [entry.field, entry]));
+
+        expect(byField['device']).toMatchObject({ level: 'requested', reason: null });
+        expect(byField['physicalFormats']).toMatchObject({
+            level: 'unknown',
+            reason: 'device-not-active',
+        });
+    });
+
+    it('keeps the output row honest when mpv reports partial params', () => {
+        const partial = assembleDeviceCapabilities({
+            ...baseInput,
+            outputParams: { channels: null, format: null, samplerate: 44100 },
+        });
+        expect(partial.find((entry) => entry.field === 'output')).toMatchObject({
+            level: 'confirmed',
+            value: '44100 Hz',
+        });
+
+        const empty = assembleDeviceCapabilities({
+            ...baseInput,
+            outputParams: { channels: null, format: null, samplerate: null },
+        });
+        expect(empty.find((entry) => entry.field === 'output')).toMatchObject({
+            level: 'unknown',
+            reason: 'no-session',
+            value: null,
+        });
+    });
+
     it('reports route and output unknown when no mpv session has been observed', () => {
         const entries = assembleDeviceCapabilities({
             availablePhysicalFormats: null,
             deviceDescription: null,
             deviceId: 'auto',
+            observedDeviceId: null,
             outputParams: null,
             physicalFormat: null,
             platform: 'darwin',

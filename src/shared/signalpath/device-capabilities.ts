@@ -19,27 +19,6 @@ export type CoreAudioFormatRole =
     | 'requested'
     | 'virtual';
 
-/**
- * Physical-format rows as printed by mpv's ca_print_asbd (ao/coreaudio_exclusive
- * v-level logs). The grammar is byte-identical across mpv 0.38-0.41; parse
- * failures must stay empty rather than guess.
- */
-export interface PhysicalFormatEntry {
-    channels: null | number;
-    format: null | string;
-    label: string;
-    sampleRate: null | number;
-}
-
-export const DEVICE_CAPABILITY_FIELDS = [
-    'device',
-    'route',
-    'output',
-    'physicalFormats',
-    'dsd',
-    'hardwareVolume',
-] as const;
-
 export interface DeviceCapabilityEntry {
     /** The active row of a physical-format table, when one matches. */
     activeFormat: null | PhysicalFormatEntry;
@@ -52,7 +31,13 @@ export interface DeviceCapabilityEntry {
     value: null | string;
 }
 
-export type DeviceCapabilityField = (typeof DEVICE_CAPABILITY_FIELDS)[number];
+export type DeviceCapabilityField =
+    | 'device'
+    | 'dsd'
+    | 'hardwareVolume'
+    | 'output'
+    | 'physicalFormats'
+    | 'route';
 
 export interface DeviceCapabilityInput {
     availablePhysicalFormats: null | PhysicalFormatEntry[];
@@ -75,6 +60,18 @@ export type DeviceCapabilityReason =
     | 'hardware-volume-unavailable'
     | 'no-session'
     | 'platform-unavailable';
+
+/**
+ * Physical-format rows as printed by mpv's ca_print_asbd (ao/coreaudio_exclusive
+ * v-level logs). The grammar is byte-identical across mpv 0.38-0.41; parse
+ * failures must stay empty rather than guess.
+ */
+export interface PhysicalFormatEntry {
+    channels: null | number;
+    format: null | string;
+    label: string;
+    sampleRate: null | number;
+}
 
 const FORMAT_LINE_ROLES: [string, CoreAudioFormatRole][] = [
     ['format in use before switching:', 'previous'],
@@ -287,12 +284,12 @@ function routeEntry(input: DeviceCapabilityInput): DeviceCapabilityEntry {
     if (input.requestedExclusive) {
         return {
             activeFormat: null,
-            detail: null,
+            detail: 'exclusive-requested',
             field: 'route',
             formats: null,
             level: 'requested',
             reason: null,
-            value: 'exclusive',
+            value: null,
         };
     }
     return {

@@ -44,18 +44,22 @@ const REASON_KEY: Record<DeviceCapabilityReason, string> = {
 const CapabilityRow = ({ entry }: { entry: DeviceCapabilityEntry }) => {
     const { t: translate } = useTranslation();
     const label = translate(`player.deviceCapabilities_${FIELD_KEY[entry.field]}`);
+    const exclusiveRequested = entry.detail === 'exclusive-requested';
+    const displayValue =
+        entry.level === 'unknown'
+            ? translate('player.deviceCapabilities_unknown')
+            : (entry.value ??
+              (exclusiveRequested
+                  ? translate('player.deviceCapabilities_exclusiveRequested')
+                  : null));
     const row = (
         <Group align="flex-start" gap="xs" justify="space-between" wrap="nowrap">
             <Text c="dim" size="xs" style={{ flexShrink: 0 }}>
                 {label}
             </Text>
             <Group gap="xs" wrap="nowrap">
-                <Text size="xs">
-                    {entry.level === 'unknown'
-                        ? translate('player.deviceCapabilities_unknown')
-                        : entry.value}
-                </Text>
-                {entry.detail === 'exclusive-requested' && (
+                <Text size="xs">{displayValue}</Text>
+                {entry.value !== null && exclusiveRequested && (
                     <Text c="dim" size="xs">
                         {translate('player.deviceCapabilities_exclusiveRequested')}
                     </Text>
@@ -105,8 +109,8 @@ const PhysicalFormatTable = ({ entry }: { entry: DeviceCapabilityEntry }) => {
                     </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                    {entry.formats.map((format) => (
-                        <Table.Tr key={format.label}>
+                    {entry.formats.map((format, index) => (
+                        <Table.Tr key={`${format.label}-${index}`}>
                             <Table.Td>
                                 <Text size="xs">{format.sampleRate ?? '?'}</Text>
                             </Table.Td>

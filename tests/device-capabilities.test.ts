@@ -203,6 +203,21 @@ describe('assembleDeviceCapabilities', () => {
         });
     });
 
+    it('marks an exclusive request unconfirmed until mpv reports the driver', () => {
+        const entries = assembleDeviceCapabilities({
+            ...baseInput,
+            route: null,
+        });
+        const route = entries.find((entry) => entry.field === 'route');
+
+        expect(route).toMatchObject({
+            detail: 'exclusive-requested',
+            level: 'requested',
+            reason: null,
+            value: null,
+        });
+    });
+
     it('keeps the output row honest when mpv reports partial params', () => {
         const partial = assembleDeviceCapabilities({
             ...baseInput,

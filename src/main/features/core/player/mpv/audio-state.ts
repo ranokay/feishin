@@ -505,10 +505,15 @@ export class AudioStateService {
             if (prefix.startsWith('ao/')) {
                 const formatLine = parseCoreAudioFormatLine(text);
                 if (formatLine) {
-                    // ASBD dumps carry device capabilities, not track events:
-                    // "available" builds the physical-format table, "active"
+                    // ASBD dumps carry device capabilities, not track events.
+                    // "our format:" opens a negotiation, so it invalidates the
+                    // previous dump; "available" builds the table; "active"
                     // publishes the format the device settled on.
-                    if (formatLine.role === 'available') {
+                    if (formatLine.role === 'our-format') {
+                        this.state.availablePhysicalFormats = [];
+                        this.state.physicalFormat = null;
+                        this.scheduleBroadcast();
+                    } else if (formatLine.role === 'available') {
                         const entry: PhysicalFormatEntry = {
                             channels: formatLine.channels,
                             format: formatLine.mpFormat ?? formatLine.formatId,
@@ -551,9 +556,10 @@ export class AudioStateService {
             this.record(parsed);
         });
         this.subscribe('audio-reconfig', () => {
-            // Renegotiation invalidates the previous device negotiation evidence.
-            this.state.availablePhysicalFormats = [];
-            this.state.physicalFormat = null;
+            // mpv sends this both when the AO closes and right after a
+            // successful negotiation, so it cannot be the invalidation point:
+            // it would wipe the dump it follows. The next dump's "our format:"
+            // line clears stale evidence instead.
             this.record({ detail: 'device renegotiation', type: 'ao-transition' });
         });
         this.subscribe('start-file', (payload) => {

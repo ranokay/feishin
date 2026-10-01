@@ -181,7 +181,7 @@ describe('assembleDeviceCapabilities', () => {
         });
     });
 
-    it('downgrades the device row when mpv has a different device configured', () => {
+    it('hides active-session facts when mpv has a different device configured', () => {
         const entries = assembleDeviceCapabilities({
             ...baseInput,
             availablePhysicalFormats: [
@@ -197,6 +197,16 @@ describe('assembleDeviceCapabilities', () => {
         const byField = Object.fromEntries(entries.map((entry) => [entry.field, entry]));
 
         expect(byField['device']).toMatchObject({ level: 'requested', reason: null });
+        expect(byField['route']).toMatchObject({
+            level: 'unknown',
+            reason: 'device-not-active',
+            value: null,
+        });
+        expect(byField['output']).toMatchObject({
+            level: 'unknown',
+            reason: 'device-not-active',
+            value: null,
+        });
         expect(byField['physicalFormats']).toMatchObject({
             level: 'unknown',
             reason: 'device-not-active',

@@ -83,6 +83,9 @@ const publishStrictObservabilityFailure = () => {
 };
 
 // Observation remains best-effort for ordinary policies; strict failures publish invalid state.
+// Callers await this before returning to the renderer: verbose AO logs only cover
+// messages emitted after request_log_messages lands, so the first loadfile must not
+// beat it or the AO negotiation lines are missed until the next reconfig.
 const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standard') => {
     stopAudioStateService();
     const generation = audioStateGeneration;
@@ -522,7 +525,7 @@ ipcMain.handle(
             } finally {
                 mpvCreatePromise = null;
             }
-            void attachAudioStateService(data.playbackPolicy);
+            await attachAudioStateService(data.playbackPolicy);
             mpvLog({ action: 'Restarted mpv', toast: 'success' });
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
@@ -554,7 +557,7 @@ ipcMain.handle(
             } finally {
                 mpvCreatePromise = null;
             }
-            void attachAudioStateService(data.playbackPolicy);
+            await attachAudioStateService(data.playbackPolicy);
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
             mpvLog({ action: 'Failed to initialize mpv, falling back to web player' }, err);

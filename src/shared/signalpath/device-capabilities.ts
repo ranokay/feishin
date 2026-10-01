@@ -96,8 +96,8 @@ export function assembleDeviceCapabilities(input: DeviceCapabilityInput): Device
 
     return [
         deviceEntry(input, deviceConfirmed),
-        routeEntry(input),
-        outputEntry(input),
+        routeEntry(input, deviceConfirmed),
+        outputEntry(input, deviceConfirmed),
         physicalFormatsEntry(input, formats, activeFormat, deviceConfirmed),
         {
             activeFormat: null,
@@ -187,6 +187,11 @@ function formatRate(rate: number): string {
     return `${Number.isInteger(rate) ? rate : rate.toFixed(1)} Hz`;
 }
 
+/** mpv has a session open, but on a different device than the selection. */
+function isDeviceActiveElsewhere(input: DeviceCapabilityInput, deviceConfirmed: boolean): boolean {
+    return input.deviceId !== null && input.observedDeviceId !== null && !deviceConfirmed;
+}
+
 /** mpv's observed configured device matches the picker selection. */
 function isSelectedDeviceActive(input: DeviceCapabilityInput): boolean {
     return (
@@ -196,7 +201,21 @@ function isSelectedDeviceActive(input: DeviceCapabilityInput): boolean {
     );
 }
 
-function outputEntry(input: DeviceCapabilityInput): DeviceCapabilityEntry {
+function outputEntry(
+    input: DeviceCapabilityInput,
+    deviceConfirmed: boolean,
+): DeviceCapabilityEntry {
+    if (isDeviceActiveElsewhere(input, deviceConfirmed)) {
+        return {
+            activeFormat: null,
+            detail: null,
+            field: 'output',
+            formats: null,
+            level: 'unknown',
+            reason: 'device-not-active',
+            value: null,
+        };
+    }
     const params = input.outputParams;
     const parts = [
         params?.format ?? null,
@@ -263,13 +282,24 @@ function physicalFormatsReason(
     if (input.platform !== 'darwin') {
         return 'platform-unavailable';
     }
-    if (input.deviceId !== null && input.observedDeviceId !== null && !deviceConfirmed) {
+    if (isDeviceActiveElsewhere(input, deviceConfirmed)) {
         return 'device-not-active';
     }
     return input.requestedExclusive ? 'exclusive-session-pending' : 'exclusive-session-required';
 }
 
-function routeEntry(input: DeviceCapabilityInput): DeviceCapabilityEntry {
+function routeEntry(input: DeviceCapabilityInput, deviceConfirmed: boolean): DeviceCapabilityEntry {
+    if (isDeviceActiveElsewhere(input, deviceConfirmed)) {
+        return {
+            activeFormat: null,
+            detail: null,
+            field: 'route',
+            formats: null,
+            level: 'unknown',
+            reason: 'device-not-active',
+            value: null,
+        };
+    }
     if (input.route) {
         return {
             activeFormat: null,

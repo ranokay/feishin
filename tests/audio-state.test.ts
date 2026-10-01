@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MpvEventHandler } from '../src/main/features/core/player/mpv/ipc-client';
-import type { StreamHeaderProbe } from '../src/shared/signalpath';
+import type { AudioSnapshot, StreamHeaderProbe } from '../src/shared/signalpath';
 
 import {
     applyPropertyValue,
@@ -313,9 +313,10 @@ describe('deriveSnapshot', () => {
         applyPropertyValue(state, 'volume', 100);
         state.physicalFormat = { level: 'inferred', source: 'mpv-log', value: '44100 Hz 2ch' };
 
-        const snapshot = deriveSnapshot(state, 7);
+        const snapshot = deriveSnapshot(state, 7, 3);
 
         expect(snapshot.sequence).toBe(7);
+        expect(snapshot.lastEventId).toBe(3);
         expect(snapshot.aoDriver).toBe('coreaudio');
         expect(snapshot.decodedParams).toEqual({ channels: 2, format: 's16', samplerate: 44100 });
         expect(snapshot.volume).toBe(100);
@@ -343,7 +344,7 @@ describe('deriveSnapshot', () => {
         applyPropertyValue(state, 'audio-params', null);
         applyPropertyValue(state, 'audio-out-params', null);
 
-        const snapshot = deriveSnapshot(state, 1);
+        const snapshot = deriveSnapshot(state, 1, 0);
 
         expect(snapshot.decodedParams).toBeNull();
         expect(snapshot.outputParams).toBeNull();
@@ -490,6 +491,84 @@ describe('AudioStateService', () => {
         ]);
         expect(events[events.length - 1].detail).toContain('7 -> 8');
         expect(events[0].id).toBeLessThan(events[events.length - 1].id);
+        service.dispose();
+    });
+
+    it('clears the event log without resetting event ids', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection, { eventLimit: 5 });
+
+        await service.start();
+        for (const pos of [1, 2]) {
+            connection.emit('property-change', {
+                data: pos,
+                event: 'property-change',
+                name: 'playlist-pos',
+            });
+        }
+        const lastIdBeforeClear = service.getEvents().at(-1)?.id;
+
+        service.clearEvents();
+
+        expect(service.getEvents()).toEqual([]);
+        expect(service.getSnapshot().lastEventId).toBe(lastIdBeforeClear);
+
+        connection.emit('property-change', {
+            data: 3,
+            event: 'property-change',
+            name: 'playlist-pos',
+        });
+        const after = service.getEvents();
+        expect(after).toHaveLength(1);
+        expect(after[0].id).toBeGreaterThan(lastIdBeforeClear ?? 0);
+        service.dispose();
+    });
+
+    it('bounds the event ring and broadcast rate under rapid device flapping', async () => {
+        const connection = createStubConnection();
+        const snapshots: AudioSnapshot[] = [];
+        const service = new AudioStateService(connection, {
+            broadcast: (snapshot) => snapshots.push(snapshot),
+            intervalMs: 100,
+        });
+
+        await service.start();
+        const iterations = 3000;
+        for (let i = 0; i < iterations; i += 1) {
+            const opened = i % 2 === 0;
+            connection.emit('property-change', {
+                data: opened ? 'coreaudio' : null,
+                event: 'property-change',
+                name: 'current-ao',
+            });
+            connection.emit('property-change', {
+                data: opened ? 'dev-a' : 'dev-b',
+                event: 'property-change',
+                name: 'audio-device',
+            });
+            connection.emit('property-change', {
+                data: {
+                    channels: 2,
+                    format: 's32',
+                    samplerate: opened ? 44100 : 48000,
+                },
+                event: 'property-change',
+                name: 'audio-out-params',
+            });
+            if (i % 50 === 49) {
+                await vi.advanceTimersByTimeAsync(100);
+            }
+        }
+        await vi.advanceTimersByTimeAsync(100);
+
+        const events = service.getEvents();
+        // The ring saturates at the documented bound (plan section 16: last 500 events),
+        // dropping the oldest occurrences.
+        expect(events).toHaveLength(500);
+        expect(events[0].id).toBeGreaterThan(1);
+        // One broadcast per coalescing window regardless of the ~9000 changes.
+        expect(snapshots.length).toBeGreaterThan(0);
+        expect(snapshots.length).toBeLessThanOrEqual(62);
         service.dispose();
     });
 

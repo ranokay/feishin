@@ -255,7 +255,11 @@ export function createObservedAudioState(): ObservedAudioState {
     };
 }
 
-export function deriveSnapshot(state: ObservedAudioState, sequence: number): AudioSnapshot {
+export function deriveSnapshot(
+    state: ObservedAudioState,
+    sequence: number,
+    lastEventId: number,
+): AudioSnapshot {
     return {
         activeFilters: state.activeFilters,
         aoDriver: state.aoDriver,
@@ -275,6 +279,7 @@ export function deriveSnapshot(state: ObservedAudioState, sequence: number): Aud
         demuxer: state.demuxer,
         gaplessAudio: state.gaplessAudio,
         lastError: state.lastError,
+        lastEventId,
         muted: state.muted,
         outputParams: state.outputParams,
         physicalFormat: state.physicalFormat,
@@ -390,6 +395,10 @@ export class AudioStateService {
         }
     }
 
+    clearEvents(): void {
+        this.events.length = 0;
+    }
+
     dispose(): void {
         this.stopped = true;
         if (this.broadcastTimer) {
@@ -414,7 +423,7 @@ export class AudioStateService {
     }
 
     getSnapshot(): AudioSnapshot {
-        return deriveSnapshot(this.state, this.lastSequence);
+        return deriveSnapshot(this.state, this.lastSequence, this.nextEventId - 1);
     }
 
     /**
@@ -675,7 +684,7 @@ export class AudioStateService {
 
     private emitSnapshot(): void {
         this.lastSequence += 1;
-        this.onBroadcast(deriveSnapshot(this.state, this.lastSequence));
+        this.onBroadcast(deriveSnapshot(this.state, this.lastSequence, this.nextEventId - 1));
     }
 
     private handleClose(): void {

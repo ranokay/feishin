@@ -52,6 +52,8 @@ export interface AudioSnapshot {
     gaplessAudio: null | string;
     /** Most recent typed engine failure; cleared when the next track starts. */
     lastError?: AudioEngineFailure | null;
+    /** Id of the newest recorded engine event; 0 when the log is empty. Advances only on record. */
+    lastEventId: number;
     muted: boolean | null;
     outputParams: null | OutputParams;
     physicalFormat: Evidence<string> | null;
@@ -70,4 +72,56 @@ export interface AudioSnapshot {
     strictValidationError: null | string;
     timestamp: number;
     volume: null | number;
+}
+
+// sequence/timestamp advance on every broadcast; they signal transport, not
+// audio state, so they are not part of snapshot identity.
+const VOLATILE_SNAPSHOT_FIELDS = new Set(['sequence', 'timestamp']);
+
+const EMPTY_KEYS: ReadonlySet<string> = new Set();
+
+/**
+ * Structural equality for audio snapshots. deriveSnapshot re-creates array and
+ * evidence objects on every broadcast, so a shallow comparison would report a
+ * change while nothing observable changed and re-render Signal Path consumers
+ * on the coalescing timer.
+ */
+export function audioSnapshotsEqual(a: AudioSnapshot | null, b: AudioSnapshot | null): boolean {
+    if (a === null || b === null) {
+        return a === b;
+    }
+    return recordsEqual(a, b, VOLATILE_SNAPSHOT_FIELDS);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function recordsEqual(a: object, b: object, ignoredKeys: ReadonlySet<string>): boolean {
+    const aRecord = a as Record<string, unknown>;
+    const bRecord = b as Record<string, unknown>;
+    const aKeys = Object.keys(aRecord).filter((key) => !ignoredKeys.has(key));
+    const bKeys = Object.keys(bRecord).filter((key) => !ignoredKeys.has(key));
+    return (
+        aKeys.length === bKeys.length &&
+        aKeys.every((key) => valuesEqual(aRecord[key], bRecord[key]))
+    );
+}
+
+function valuesEqual(a: unknown, b: unknown): boolean {
+    if (Object.is(a, b)) {
+        return true;
+    }
+    if (Array.isArray(a) || Array.isArray(b)) {
+        return (
+            Array.isArray(a) &&
+            Array.isArray(b) &&
+            a.length === b.length &&
+            a.every((item, index) => valuesEqual(item, b[index]))
+        );
+    }
+    if (isRecord(a) || isRecord(b)) {
+        return isRecord(a) && isRecord(b) && recordsEqual(a, b, EMPTY_KEYS);
+    }
+    return false;
 }

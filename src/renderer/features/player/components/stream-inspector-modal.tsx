@@ -5,16 +5,18 @@ import { useTranslation } from 'react-i18next';
 import { EvidenceDot, formatServerStage, StageRow } from './signal-path-rows';
 import styles from './stream-inspector-modal.module.css';
 
-import { useAudioSnapshot, useAudioStateStore } from '/@/renderer/store/audio-state.store';
+import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
 import { usePlayerSong } from '/@/renderer/store/player.store';
 import { useEffectivePlaybackPolicy, useSettingsStore } from '/@/renderer/store/settings.store';
 import { logger } from '/@/renderer/utils/logger';
+import { Button } from '/@/shared/components/button/button';
 import { Code } from '/@/shared/components/code/code';
 import { CopyButton } from '/@/shared/components/copy-button/copy-button';
 import { Group } from '/@/shared/components/group/group';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { Select } from '/@/shared/components/select/select';
 import { Stack } from '/@/shared/components/stack/stack';
+import { TextInput } from '/@/shared/components/text-input/text-input';
 import { Text } from '/@/shared/components/text/text';
 import {
     AUDIO_EVENT_CATEGORIES,
@@ -87,13 +89,14 @@ export const StreamInspectorModal = () => {
     const replayGainMode = useSettingsStore((state) => state.playback.mpvProperties.replayGainMode);
     const song = usePlayerSong();
     const snapshot = useAudioSnapshot();
-    // useAudioSnapshot strips volatile fields, so subscribe to the raw
-    // broadcast sequence separately to refresh the query-only event log.
-    const broadcastSequence = useAudioStateStore((state) => state.snapshot?.sequence);
+    // The event log is fetched on demand; snapshot broadcasts that carry no new
+    // event must not trigger an IPC round trip and a re-render.
+    const lastEventId = snapshot?.lastEventId;
 
     const [events, setEvents] = useState<AudioEngineEvent[]>([]);
     const [categoryFilter, setCategoryFilter] = useState<'all' | AudioEventCategory>('all');
     const [severityFilter, setSeverityFilter] = useState<'all' | AudioEventSeverity>('all');
+    const [searchFilter, setSearchFilter] = useState('');
 
     useEffect(() => {
         if (!window.api?.audioState?.getEvents) {
@@ -103,7 +106,7 @@ export const StreamInspectorModal = () => {
             .getEvents()
             .then(setEvents)
             .catch((error) => logger.warn('Failed to load audio engine event log', { error }));
-    }, [broadcastSequence]);
+    }, [lastEventId]);
 
     const source = useMemo(
         () =>
@@ -136,8 +139,16 @@ export const StreamInspectorModal = () => {
 
     const filteredEvents = filterAudioEvents(events, {
         category: categoryFilter,
+        search: searchFilter,
         severity: severityFilter,
     });
+
+    const clearEvents = () => {
+        window.api.audioState
+            .clearEvents()
+            .then(() => setEvents([]))
+            .catch((error) => logger.warn('Failed to clear audio engine event log', { error }));
+    };
 
     return (
         <Stack gap="md" w="100%">
@@ -266,6 +277,21 @@ export const StreamInspectorModal = () => {
                         value={severityFilter}
                         w={130}
                     />
+                    <TextInput
+                        onChange={(event) => setSearchFilter(event.currentTarget.value)}
+                        placeholder={t('player.signalPath_searchEvents')}
+                        size="xs"
+                        style={{ flex: 1 }}
+                        value={searchFilter}
+                    />
+                    <Button
+                        disabled={events.length === 0}
+                        onClick={clearEvents}
+                        size="xs"
+                        variant="subtle"
+                    >
+                        {t('player.signalPath_clearEvents')}
+                    </Button>
                 </Group>
                 <ScrollArea style={{ maxHeight: 260 }}>
                     <Stack gap={2}>

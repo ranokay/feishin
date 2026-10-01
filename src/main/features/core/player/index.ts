@@ -77,7 +77,7 @@ const publishStrictObservabilityFailure = () => {
     const detail = 'strict property observability unavailable';
     const state = createObservedAudioState();
     state.strictValidationError = detail;
-    audioStateFallbackSnapshot = deriveSnapshot(state, 1);
+    audioStateFallbackSnapshot = deriveSnapshot(state, 1, 1);
     audioStateFallbackEvents = [{ detail, id: 1, time: Date.now(), type: 'strict-invalidated' }];
     getMainWindow()?.webContents.send('renderer-audio-state-changed', audioStateFallbackSnapshot);
 };
@@ -820,6 +820,12 @@ ipcMain.handle('player-audio-snapshot', async () => {
 // Bounded audio-engine event log (device/exclusive/rate/filter occurrences)
 ipcMain.handle('player-audio-event-log', async () => {
     return audioStateService?.getEvents() ?? audioStateFallbackEvents;
+});
+
+// Clears the bounded event log without resetting event ids
+ipcMain.handle('player-audio-event-log-clear', async () => {
+    audioStateService?.clearEvents();
+    audioStateFallbackEvents = [];
 });
 
 // Server-route verification for the playing track (headers + demuxer cross-check)

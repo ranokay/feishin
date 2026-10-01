@@ -190,7 +190,11 @@ const rendererError = (cb: (data: string) => void) => {
 };
 
 const rendererPlayerFallback = (cb: (data: boolean) => void) => {
-    ipcRenderer.on('renderer-player-fallback', (_, data) => cb(data));
+    const listener = (_event: Electron.IpcRendererEvent, data: boolean) => cb(data);
+    ipcRenderer.on('renderer-player-fallback', listener);
+    return () => {
+        ipcRenderer.removeListener('renderer-player-fallback', listener);
+    };
 };
 
 const rendererMpvReconnect = (cb: () => void) => {

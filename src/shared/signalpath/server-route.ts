@@ -14,8 +14,14 @@ export interface DemuxerObservation {
 
 /** Tagged queue input keeps radio streams separate from verifiable library tracks. */
 export type MpvLoadSource =
-    | (ServerVerificationRequest & { kind: 'library' })
-    | { kind: 'radio'; url: string };
+    | (ServerVerificationRequest & { kind: 'library'; playbackKey: string })
+    | { kind: 'radio'; playbackKey: string; url: string };
+
+export interface RadioQueueRestore {
+    /** True when a paused station must be restored without resuming playback. */
+    pause: boolean;
+    stream: Extract<MpvLoadSource, { kind: 'radio' }>;
+}
 
 export interface ServerRouteEvidence {
     /** Human-readable mismatch reasons; null when no contradiction was found. */
@@ -44,6 +50,50 @@ export interface StreamHeaderProbe {
     /** Full-entity byte length when derivable (Content-Length or Content-Range total). */
     contentLength: null | number;
     contentType: null | string;
+}
+
+export function isMpvPlaybackKeyQueued(
+    sources: readonly (MpvLoadSource | undefined)[],
+    playbackKey: null | string,
+): boolean {
+    return playbackKey === null || sources.some((source) => source?.playbackKey === playbackKey);
+}
+
+export function resolveMpvPlaybackKey(
+    sources: readonly (MpvLoadSource | undefined)[],
+    path: string,
+    position: number,
+): null | string {
+    const positioned = sources[position];
+    const source =
+        positioned?.url === path
+            ? positioned
+            : sources.find((candidate) => candidate?.url === path);
+    return source?.playbackKey ?? null;
+}
+
+/**
+ * Rebuilds the queue entry for the active radio station so a fresh mpv instance
+ * can resume it. Radio state outlives mpv re-initializations (policy change,
+ * reload, reconnect), but the radio hook only re-queues when its own inputs
+ * change, so the engine restores the station independently.
+ */
+export function resolveRadioQueueRestore(state: {
+    currentStreamUrl: null | string;
+    isPlaying: boolean;
+    playbackKey: null | string;
+}): null | RadioQueueRestore {
+    if (!state.currentStreamUrl || !state.playbackKey) {
+        return null;
+    }
+    return {
+        pause: !state.isPlaying,
+        stream: {
+            kind: 'radio',
+            playbackKey: state.playbackKey,
+            url: state.currentStreamUrl,
+        },
+    };
 }
 
 // Servers label the same container differently across backends; both directions

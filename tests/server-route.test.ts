@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { evaluateServerRoute, redactStreamUrl } from '../src/shared/signalpath/server-route';
+import {
+    evaluateServerRoute,
+    redactStreamUrl,
+    resolveRadioQueueRestore,
+} from '../src/shared/signalpath/server-route';
 
 const FLAC_SOURCE = {
     bitDepth: 16,
@@ -180,6 +184,54 @@ describe('evaluateServerRoute', () => {
         // Size still matches exactly; ranges alone must not flip to transcoded.
         expect(result.route).toBe('direct-stream');
         expect(result.verification).toBe('size-match');
+    });
+});
+
+describe('resolveRadioQueueRestore', () => {
+    it('returns nothing when no station is active', () => {
+        expect(
+            resolveRadioQueueRestore({
+                currentStreamUrl: null,
+                isPlaying: true,
+                playbackKey: 'radio-1',
+            }),
+        ).toBeNull();
+    });
+
+    it('returns nothing until the station has a playback key', () => {
+        expect(
+            resolveRadioQueueRestore({
+                currentStreamUrl: 'https://radio/stream',
+                isPlaying: true,
+                playbackKey: null,
+            }),
+        ).toBeNull();
+    });
+
+    it('restores the station tagged as radio and resumes a playing station', () => {
+        expect(
+            resolveRadioQueueRestore({
+                currentStreamUrl: 'https://radio/stream',
+                isPlaying: true,
+                playbackKey: 'radio-1',
+            }),
+        ).toEqual({
+            pause: false,
+            stream: { kind: 'radio', playbackKey: 'radio-1', url: 'https://radio/stream' },
+        });
+    });
+
+    it('restores a paused station without resuming it', () => {
+        expect(
+            resolveRadioQueueRestore({
+                currentStreamUrl: 'https://radio/stream',
+                isPlaying: false,
+                playbackKey: 'radio-1',
+            }),
+        ).toEqual({
+            pause: true,
+            stream: { kind: 'radio', playbackKey: 'radio-1', url: 'https://radio/stream' },
+        });
     });
 });
 

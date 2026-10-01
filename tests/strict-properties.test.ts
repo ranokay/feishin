@@ -33,6 +33,7 @@ function snapshot(overrides: Partial<AudioSnapshot> = {}): AudioSnapshot {
         muted: false,
         outputParams: { channels: 2, format: 's32', samplerate: 44100 },
         physicalFormat: null,
+        playbackKey: 'song-1',
         playlistPos: 0,
         sequence: 1,
         speed: 1,

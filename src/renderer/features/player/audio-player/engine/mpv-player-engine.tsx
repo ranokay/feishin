@@ -20,6 +20,7 @@ import {
     filterPolicyExtraParameters,
     type Platform,
     policyStartupConfig,
+    resolveRadioQueueRestore,
 } from '/@/shared/signalpath';
 import { PlayerStatus } from '/@/shared/types/types';
 
@@ -164,11 +165,16 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
                 mpvPlayer?.setProperties({ af: filterStr });
             }
 
-            // After initialization, populate the queue if currentSrc is available
-            // Don't override queue if radio is active
+            // After initialization, populate the queue if currentSrc is available.
+            // A fresh instance must also restore the active radio station: the
+            // radio hook only re-queues when its own inputs change and cannot
+            // observe this re-initialization.
             const radioState = useRadioStore.getState();
+            const radioRestore = resolveRadioQueueRestore(radioState);
 
-            if (!radioState.currentStreamUrl) {
+            if (radioRestore && mpvPlayer) {
+                mpvPlayer.setQueue(radioRestore.stream, undefined, radioRestore.pause);
+            } else if (!radioState.currentStreamUrl) {
                 const playerData = usePlayerStore.getState().getPlayerData();
                 const currentStream = playerData.currentSong
                     ? await getMpvStream(playerData.currentSong, transcode)

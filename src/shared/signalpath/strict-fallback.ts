@@ -1,4 +1,4 @@
-import type { AudioEngineFailureCause } from './engine-errors';
+import type { AudioEngineFailure, AudioEngineFailureCause } from './engine-errors';
 import type { PlaybackPolicy, PlaybackPolicyPlayerType } from './policy';
 import type { AudioSnapshot } from './snapshot';
 
@@ -29,8 +29,9 @@ export function resolveStrictPlaybackStop(
     if (policy !== 'bit-perfect' || playerType !== 'local' || !state) {
         return null;
     }
-    if (state.lastError) {
-        return state.lastError;
+    const failure = strictFailure(state);
+    if (failure) {
+        return failure;
     }
     if (state.serverRoute?.route === 'transcoded') {
         return {
@@ -46,7 +47,7 @@ export function retainStrictPlaybackStopState(
     current: null | RetainedStrictPlaybackStopState,
     next: RetainedStrictPlaybackStopState,
 ): null | RetainedStrictPlaybackStopState {
-    if (next.lastError || next.serverRoute?.route === 'transcoded') {
+    if (strictFailure(next) || next.serverRoute?.route === 'transcoded') {
         if (
             current?.playbackKey === next.playbackKey &&
             current.lastError === next.lastError &&
@@ -65,4 +66,17 @@ export function shouldUseWebPlayerFallback(
     fallbackRequested: boolean,
 ): boolean {
     return fallbackRequested && playerType === 'local' && policy !== 'bit-perfect';
+}
+
+/**
+ * Strict stops require a typed cause. Unclassified end-file failures are
+ * transient buffers/network drops; they must stay retryable instead of
+ * latching a dead end (architecture doc: strict stop only on
+ * integrity-affecting failures, not transient buffers).
+ */
+function strictFailure(state: StrictPlaybackState): AudioEngineFailure | null {
+    if (!state.lastError || state.lastError.cause === 'unknown') {
+        return null;
+    }
+    return state.lastError;
 }

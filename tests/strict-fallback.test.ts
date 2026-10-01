@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
     classifyAoFailure,
+    classifyEndFileError,
     resolveFallbackPlaybackType,
     resolveStrictPlaybackStop,
     retainStrictPlaybackStopState,
     shouldUseWebPlayerFallback,
+    unknownFailure,
 } from '../src/shared/signalpath';
 
 describe('resolveStrictPlaybackStop', () => {
@@ -32,6 +34,33 @@ describe('resolveStrictPlaybackStop', () => {
             cause: 'transcode-detected',
             standardWouldHelp: true,
         });
+    });
+
+    it('does not stop Bit-Perfect playback for an unclassified transient failure', () => {
+        expect(
+            resolveStrictPlaybackStop('bit-perfect', 'local', {
+                lastError: unknownFailure('end-file(reason=error)'),
+            }),
+        ).toBeNull();
+        expect(
+            resolveStrictPlaybackStop('bit-perfect', 'local', {
+                lastError: classifyEndFileError(),
+            }),
+        ).toBeNull();
+    });
+
+    it('still stops when a transcode verdict accompanies an unclassified failure', () => {
+        expect(
+            resolveStrictPlaybackStop('bit-perfect', 'local', {
+                lastError: unknownFailure('end-file(reason=error)'),
+                serverRoute: {
+                    detail: 'response mime audio/mpeg contradicts source audio/flac',
+                    level: 'confirmed',
+                    route: 'transcoded',
+                    verification: 'header-match',
+                },
+            }),
+        ).toMatchObject({ cause: 'transcode-detected' });
     });
 
     it('does not stop non-strict or non-local playback', () => {
@@ -105,6 +134,15 @@ describe('retainStrictPlaybackStopState', () => {
                 lastError: null,
                 playbackKey: 'song-2',
                 serverRoute: null,
+            }),
+        ).toBeNull();
+    });
+
+    it('does not latch an unclassified transient failure', () => {
+        expect(
+            retainStrictPlaybackStopState(null, {
+                lastError: unknownFailure('end-file(reason=error)'),
+                playbackKey: 'song-1',
             }),
         ).toBeNull();
     });

@@ -123,9 +123,15 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
                 if (generation !== audioStateGeneration) {
                     return;
                 }
-                if (playbackPolicy === 'bit-perfect') {
+                // Unclassified failures are transient and must stay retryable;
+                // only typed causes are strict stops. The renderer gate uses
+                // this same resolver so both sides agree on what stops.
+                const strictStop = resolveStrictPlaybackStop(playbackPolicy, 'local', {
+                    lastError: failure,
+                });
+                if (strictStop) {
                     if (isMpvPlaybackKeyQueued(queuedStreams, playbackKey)) {
-                        pauseForStrictStop(failure, playbackKey, true);
+                        pauseForStrictStop(strictStop, playbackKey, true);
                     }
                     return;
                 }

@@ -12,6 +12,11 @@ export interface ResolvedDeviceProfile {
     profile: DeviceProfile;
 }
 
+// mpv resolves a missing or blank `audio-device` to its `auto` device, which is
+// also the first entry in its device list. Profiles keyed `auto` therefore cover
+// the default selection.
+const MPV_DEFAULT_DEVICE_ID = 'auto';
+
 export function normalizeDeviceDescription(value: null | string | undefined): null | string {
     const normalized = value?.trim().replace(/\s+/g, ' ').toLowerCase();
     return normalized ? normalized : null;
@@ -47,6 +52,10 @@ export function normalizeDeviceProfiles(value: unknown): DeviceProfileMap {
     return profiles;
 }
 
+export function normalizeMpvDeviceId(deviceId: null | string | undefined): string {
+    return deviceId?.trim() || MPV_DEFAULT_DEVICE_ID;
+}
+
 /**
  * Resolves the profile for a device: exact mpv id first, then a unique
  * normalized-description match for replug stability. Ambiguous descriptions
@@ -57,11 +66,11 @@ export function resolveDeviceProfile(
     deviceId: null | string | undefined,
     description: null | string | undefined,
 ): null | ResolvedDeviceProfile {
-    const trimmedId = deviceId?.trim();
-    if (trimmedId && Object.hasOwn(profiles, trimmedId)) {
-        const profile = profiles[trimmedId];
+    const deviceKey = normalizeMpvDeviceId(deviceId);
+    if (Object.hasOwn(profiles, deviceKey)) {
+        const profile = profiles[deviceKey];
         if (profile) {
-            return { key: trimmedId, profile };
+            return { key: deviceKey, profile };
         }
     }
 

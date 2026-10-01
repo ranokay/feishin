@@ -34,7 +34,7 @@ const getAudioDevices = async () => {
     return (devices || []).filter((dev: MediaDeviceInfo) => dev.kind === 'audiooutput');
 };
 
-const getMpvAudioDevices = async () => {
+export const getMpvAudioDevices = async () => {
     if (!mpvPlayer) {
         return [];
     }
@@ -143,13 +143,20 @@ export const AudioSettings = memo(() => {
     const audioDevices = useAudioDevices(playbackType);
     const audioDeviceId =
         playbackType === PlayerType.LOCAL ? settings.mpvAudioDeviceId : settings.audioDeviceId;
+    // The picker shows mpv's autoselect device when nothing is persisted, so a
+    // profile can attach to that displayed device without a prior pick.
+    const selectedDeviceId = audioDeviceId ?? getDefaultAudioDevice(audioDevices, playbackType);
     const audioDeviceDescription =
-        audioDevices.find((device) => device.value === audioDeviceId)?.description ??
+        audioDevices.find((device) => device.value === selectedDeviceId)?.description ??
         settings.mpvAudioDeviceDescription ??
         null;
     const deviceProfile =
-        playbackType === PlayerType.LOCAL && audioDeviceId
-            ? resolveDeviceProfile(settings.deviceProfiles, audioDeviceId, audioDeviceDescription)
+        playbackType === PlayerType.LOCAL && selectedDeviceId
+            ? resolveDeviceProfile(
+                  settings.deviceProfiles,
+                  selectedDeviceId,
+                  audioDeviceDescription,
+              )
             : null;
 
     // Dynamically build the options for the dropdown
@@ -209,7 +216,7 @@ export const AudioSettings = memo(() => {
                             playback: resolveAudioDeviceSettings(playbackType, audioDevices, e),
                         })
                     }
-                    value={audioDeviceId ?? getDefaultAudioDevice(audioDevices, playbackType)}
+                    value={selectedDeviceId}
                 />
             ),
             description: t('setting.audioDevice', { context: 'description' }),
@@ -238,10 +245,10 @@ export const AudioSettings = memo(() => {
                         },
                     ]}
                     onChange={(e) => {
-                        if (!audioDeviceId || !e) {
+                        if (!selectedDeviceId || !e) {
                             return;
                         }
-                        const profileKey = deviceProfile?.key ?? audioDeviceId;
+                        const profileKey = deviceProfile?.key ?? selectedDeviceId;
                         if (e === 'global') {
                             setPlaybackDeviceProfile(profileKey, null);
                             return;
@@ -255,7 +262,7 @@ export const AudioSettings = memo(() => {
                 />
             ),
             description: t('setting.devicePlaybackPolicy', { context: 'description' }),
-            isHidden: !isElectron() || playbackType !== PlayerType.LOCAL || !audioDeviceId,
+            isHidden: !isElectron() || playbackType !== PlayerType.LOCAL || !selectedDeviceId,
             title: t('setting.devicePlaybackPolicy'),
         },
         {

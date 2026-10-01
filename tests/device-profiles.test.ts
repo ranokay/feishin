@@ -4,6 +4,7 @@ import {
     type DeviceProfileMap,
     normalizeDeviceDescription,
     normalizeDeviceProfiles,
+    normalizeMpvDeviceId,
     type PlaybackPolicy,
     resolveDeviceProfile,
     resolveEffectivePlaybackPolicy,
@@ -27,6 +28,17 @@ describe('normalizeDeviceDescription', () => {
     });
 });
 
+describe('normalizeMpvDeviceId', () => {
+    it('treats a missing or blank device id as the mpv auto device', () => {
+        expect(normalizeMpvDeviceId(undefined)).toBe('auto');
+        expect(normalizeMpvDeviceId(null)).toBe('auto');
+        expect(normalizeMpvDeviceId('  ')).toBe('auto');
+        expect(normalizeMpvDeviceId(' coreaudio/BuiltInSpeakerDevice ')).toBe(
+            'coreaudio/BuiltInSpeakerDevice',
+        );
+    });
+});
+
 describe('resolveDeviceProfile', () => {
     it('matches by exact device id first', () => {
         const profiles: DeviceProfileMap = {
@@ -38,6 +50,27 @@ describe('resolveDeviceProfile', () => {
         expect(resolved).toEqual({
             key: USB_DAC_ID,
             profile: profile('Some other description', 'exclusive'),
+        });
+    });
+
+    it('resolves the auto profile when no device id is configured', () => {
+        const profiles: DeviceProfileMap = { auto: profile('Autoselect device') };
+
+        expect(resolveDeviceProfile(profiles, undefined, undefined)).toEqual({
+            key: 'auto',
+            profile: profile('Autoselect device'),
+        });
+    });
+
+    it('prefers an explicit device id over the auto profile', () => {
+        const profiles: DeviceProfileMap = {
+            auto: profile('Autoselect device'),
+            [USB_DAC_ID]: profile(USB_DAC_DESCRIPTION, 'exclusive'),
+        };
+
+        expect(resolveDeviceProfile(profiles, USB_DAC_ID, USB_DAC_DESCRIPTION)).toEqual({
+            key: USB_DAC_ID,
+            profile: profile(USB_DAC_DESCRIPTION, 'exclusive'),
         });
     });
 
@@ -86,6 +119,14 @@ describe('resolveEffectivePlaybackPolicy', () => {
         expect(
             resolveEffectivePlaybackPolicy('standard', {}, USB_DAC_ID, USB_DAC_DESCRIPTION),
         ).toBe('standard');
+    });
+
+    it('applies the auto profile to the default (unset) device selection', () => {
+        const profiles: DeviceProfileMap = { auto: profile('Autoselect device') };
+
+        expect(resolveEffectivePlaybackPolicy('standard', profiles, undefined, undefined)).toBe(
+            'bit-perfect',
+        );
     });
 
     it('consumes the profile override before the global default', () => {

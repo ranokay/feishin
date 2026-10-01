@@ -6,6 +6,7 @@ import styles from './signal-path-badge.module.css';
 import { EvidenceDot, formatServerStage, StageRow } from './signal-path-rows';
 import { StreamInspectorModal } from './stream-inspector-modal';
 
+import { getMpvAudioDevices } from '/@/renderer/features/settings/components/playback/audio-settings';
 import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
 import { usePlayerSong, usePlayerStore } from '/@/renderer/store/player.store';
 import {
@@ -25,6 +26,7 @@ import {
     declareSource,
     type IntegrityStatus,
     isExclusiveRoute,
+    normalizeMpvDeviceId,
     type ProcessingEntry,
     resolveDeviceProfile,
 } from '/@/shared/signalpath';
@@ -127,23 +129,26 @@ export const SignalPathBadge = () => {
     const playerStatus = usePlayerStore((state) => state.player.status);
     const snapshot = useAudioSnapshot();
 
-    const deviceId = playbackSettings.mpvAudioDeviceId;
+    const deviceId = normalizeMpvDeviceId(playbackSettings.mpvAudioDeviceId);
     const deviceProfile = resolveDeviceProfile(
         playbackSettings.deviceProfiles,
         deviceId,
         playbackSettings.mpvAudioDeviceDescription,
     );
 
-    const toggleDeviceProfile = () => {
-        if (!deviceId) {
-            return;
-        }
+    const toggleDeviceProfile = async () => {
         if (deviceProfile) {
             setPlaybackDeviceProfile(deviceProfile.key, null);
             return;
         }
+        // Installs upgraded with an id saved before descriptions existed have no
+        // stored description; resolve it once so the profile survives a replug.
+        const description =
+            playbackSettings.mpvAudioDeviceDescription ??
+            (await getMpvAudioDevices()).find((device) => device.value === deviceId)?.description ??
+            null;
         setPlaybackDeviceProfile(deviceId, {
-            description: playbackSettings.mpvAudioDeviceDescription ?? null,
+            description,
             policyOverride: 'bit-perfect',
         });
     };
@@ -223,18 +228,16 @@ export const SignalPathBadge = () => {
                         label={t('player.signalPath_stageOutput')}
                     />
                     <StageRow item={model.device} label={t('player.signalPath_stageDevice')} />
-                    {deviceId && (
-                        <Button
-                            fullWidth
-                            onClick={toggleDeviceProfile}
-                            size="compact-xs"
-                            variant="light"
-                        >
-                            {deviceProfile
-                                ? t('player.signalPath_useGlobalPolicy')
-                                : t('player.signalPath_rememberBitPerfect')}
-                        </Button>
-                    )}
+                    <Button
+                        fullWidth
+                        onClick={() => toggleDeviceProfile()}
+                        size="compact-xs"
+                        variant="light"
+                    >
+                        {deviceProfile
+                            ? t('player.signalPath_useGlobalPolicy')
+                            : t('player.signalPath_rememberBitPerfect')}
+                    </Button>
                     <Button fullWidth onClick={openInspector} size="compact-xs" variant="light">
                         {t('player.signalPath_openInspector')}
                     </Button>

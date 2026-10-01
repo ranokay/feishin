@@ -2978,13 +2978,14 @@ export const usePlaybackSettings = () => useSettingsStore((state) => state.playb
  * only the settings UI edits the global policy directly.
  */
 export const useEffectivePlaybackPolicy = () =>
-    useSettingsStore((state) =>
-        resolveEffectivePlaybackPolicy(
-            state.playback.playbackPolicy,
-            state.playback.deviceProfiles,
-            state.playback.mpvAudioDeviceId,
-            state.playback.mpvAudioDeviceDescription,
-        ),
+    useSettingsStore((state) => resolvePlaybackPolicyForSettings(state.playback));
+
+export const resolvePlaybackPolicyForSettings = (playback: SettingsState['playback']) =>
+    resolveEffectivePlaybackPolicy(
+        playback.playbackPolicy,
+        playback.deviceProfiles,
+        playback.mpvAudioDeviceId,
+        playback.mpvAudioDeviceDescription,
     );
 
 export const useTableSettings = (type: ItemListKey) =>

@@ -351,16 +351,16 @@ describe('deriveSnapshot', () => {
 });
 
 describe('parseAoLogEvent', () => {
-    it('classifies macOS physical-format evidence as inferred tier input', () => {
+    it('leaves ASBD format dumps to the device-capabilities parser', () => {
         expect(
             parseAoLogEvent(
                 'ao/coreaudio_exclusive',
-                'Selected physical format: 96000 Hz float32 2ch',
+                'actual format in use:  96000.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
             ),
-        ).toEqual({
-            detail: 'Selected physical format: 96000 Hz float32 2ch',
-            type: 'physical-format',
-        });
+        ).toBeNull();
+        expect(
+            parseAoLogEvent('ao/coreaudio_exclusive', 'our format:  48000.0Hz 32bit lpcm'),
+        ).toBeNull();
     });
 
     it('classifies exclusive hogmode contention failure', () => {
@@ -508,7 +508,7 @@ describe('AudioStateService', () => {
         service.dispose();
     });
 
-    it('clears stale physical-format evidence when the AO renegotiates within a driver', async () => {
+    it('keeps a fresh physical-format table across the negotiation completion reconfig', async () => {
         const connection = createStubConnection();
         const service = new AudioStateService(connection);
 
@@ -516,12 +516,137 @@ describe('AudioStateService', () => {
         connection.emit('log-message', {
             event: 'log-message',
             prefix: 'ao/coreaudio_exclusive',
-            text: 'Selected physical format: 44100 Hz float32 2ch',
+            text: 'our format:  48000.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
         });
-        expect(service.getSnapshot().physicalFormat).not.toBeNull();
-
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: '-   96000.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: 'actual format in use:  96000.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+        // mpv opens the AO, dumps the formats, then announces the reconfig.
         connection.emit('audio-reconfig', { event: 'audio-reconfig' });
 
+        const snapshot = service.getSnapshot();
+        expect(snapshot.physicalFormat?.value).toBe('96000 Hz / 32-bit / 2ch / float');
+        expect(snapshot.availablePhysicalFormats?.value).toHaveLength(1);
+        service.dispose();
+    });
+
+    it('clears the previous dump when a new negotiation starts', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection);
+
+        await service.start();
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: 'our format:  48000.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: '-   44100.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+        expect(service.getSnapshot().availablePhysicalFormats).not.toBeNull();
+
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: 'our format:  96000.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+
+        expect(service.getSnapshot().availablePhysicalFormats).toBeNull();
+        expect(service.getSnapshot().physicalFormat).toBeNull();
+
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: '-   96000.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+        expect(
+            service.getSnapshot().availablePhysicalFormats?.value.map((entry) => entry.sampleRate),
+        ).toEqual([96000]);
+        service.dispose();
+    });
+
+    it('collects the coreaudio_exclusive physical-format table and the active format', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection);
+
+        await service.start();
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: '-   44100.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: '-   96000.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: 'actual format in use:  96000.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+
+        const snapshot = service.getSnapshot();
+        expect(snapshot.physicalFormat).toEqual({
+            level: 'inferred',
+            source: 'mpv-log',
+            value: '96000 Hz / 32-bit / 2ch / float',
+        });
+        expect(snapshot.availablePhysicalFormats).toEqual({
+            level: 'inferred',
+            source: 'mpv-log',
+            value: [
+                {
+                    channels: 2,
+                    format: 'float',
+                    label: '44100 Hz / 32-bit / 2ch / float',
+                    sampleRate: 44100,
+                },
+                {
+                    channels: 2,
+                    format: 'float',
+                    label: '96000 Hz / 32-bit / 2ch / float',
+                    sampleRate: 96000,
+                },
+            ],
+        });
+        expect(service.getEvents().some((event) => event.type === 'physical-format')).toBe(true);
+        service.dispose();
+    });
+
+    it('drops physical-format evidence when the device changes', async () => {
+        const connection = createStubConnection();
+        const service = new AudioStateService(connection);
+
+        await service.start();
+        connection.emit('property-change', {
+            data: 'coreaudio/BuiltInSpeakerDevice',
+            event: 'property-change',
+            name: 'audio-device',
+        });
+        connection.emit('log-message', {
+            event: 'log-message',
+            prefix: 'ao/coreaudio_exclusive',
+            text: '-   44100.0Hz 32bit lpcm [9][4bpp][1fbp][4bpf][2ch] float LE U packed (float)',
+        });
+        expect(service.getSnapshot().availablePhysicalFormats).not.toBeNull();
+
+        connection.emit('property-change', {
+            data: 'coreaudio/USBDAC',
+            event: 'property-change',
+            name: 'audio-device',
+        });
+
+        expect(service.getSnapshot().availablePhysicalFormats).toBeNull();
         expect(service.getSnapshot().physicalFormat).toBeNull();
         service.dispose();
     });

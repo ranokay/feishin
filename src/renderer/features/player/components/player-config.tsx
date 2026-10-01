@@ -3,10 +3,11 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
+import { DeviceCapabilitiesButton } from '/@/renderer/features/player/components/device-capabilities-modal';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
-    getDefaultAudioDevice,
     resolveAudioDeviceSettings,
+    resolveSelectedAudioDevice,
     useAudioDevices,
 } from '/@/renderer/features/settings/components/playback/audio-settings';
 import {
@@ -314,25 +315,40 @@ const AudioDeviceConfig = () => {
         playbackType === PlayerType.LOCAL
             ? playbackSettings.mpvAudioDeviceId
             : playbackSettings.audioDeviceId;
+    const { description: audioDeviceDescription, id: selectedDeviceId } =
+        resolveSelectedAudioDevice(
+            audioDevices,
+            playbackType,
+            audioDeviceId,
+            playbackSettings.mpvAudioDeviceDescription,
+        );
 
     return (
-        <Select
-            comboboxProps={{ withinPortal: false }}
-            data={audioDevices}
-            disabled={status === PlayerStatus.PLAYING}
-            key={playbackType}
-            onChange={(e) => {
-                setSettings({
-                    playback: {
-                        ...playbackSettings,
-                        ...resolveAudioDeviceSettings(playbackType, audioDevices, e),
-                    },
-                });
-            }}
-            value={audioDeviceId ?? getDefaultAudioDevice(audioDevices, playbackType)}
-            variant="filled"
-            width="100%"
-        />
+        <Group gap="xs" wrap="nowrap">
+            <Select
+                comboboxProps={{ withinPortal: false }}
+                data={audioDevices}
+                disabled={status === PlayerStatus.PLAYING}
+                key={playbackType}
+                onChange={(e) => {
+                    setSettings({
+                        playback: {
+                            ...playbackSettings,
+                            ...resolveAudioDeviceSettings(playbackType, audioDevices, e),
+                        },
+                    });
+                }}
+                value={selectedDeviceId}
+                variant="filled"
+                width="100%"
+            />
+            {playbackType === PlayerType.LOCAL && selectedDeviceId && (
+                <DeviceCapabilitiesButton
+                    description={audioDeviceDescription}
+                    deviceId={selectedDeviceId}
+                />
+            )}
+        </Group>
     );
 };
 

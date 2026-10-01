@@ -4,6 +4,7 @@ import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
+import { DeviceCapabilitiesButton } from '/@/renderer/features/player/components/device-capabilities-modal';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
     SettingOption,
@@ -55,6 +56,25 @@ export const getDefaultAudioDevice = (
 ): null | string => {
     const defaultId = playbackType === PlayerType.LOCAL ? 'auto' : 'default';
     return devices.find((d) => d.value === defaultId)?.value ?? devices[0]?.value ?? null;
+};
+
+/**
+ * Resolves the device the picker displays. The picker shows mpv's autoselect
+ * device when nothing is persisted, so a profile can attach to that displayed
+ * device without a prior pick.
+ */
+export const resolveSelectedAudioDevice = (
+    devices: AudioDeviceOption[],
+    playbackType: PlayerType,
+    deviceId: null | string | undefined,
+    storedDescription?: null | string,
+): { description: null | string; id: null | string } => {
+    const id = deviceId ?? getDefaultAudioDevice(devices, playbackType);
+    return {
+        description:
+            devices.find((device) => device.value === id)?.description ?? storedDescription ?? null,
+        id,
+    };
 };
 
 /**
@@ -144,13 +164,13 @@ export const AudioSettings = memo(() => {
     const audioDevices = useAudioDevices(playbackType);
     const audioDeviceId =
         playbackType === PlayerType.LOCAL ? settings.mpvAudioDeviceId : settings.audioDeviceId;
-    // The picker shows mpv's autoselect device when nothing is persisted, so a
-    // profile can attach to that displayed device without a prior pick.
-    const selectedDeviceId = audioDeviceId ?? getDefaultAudioDevice(audioDevices, playbackType);
-    const audioDeviceDescription =
-        audioDevices.find((device) => device.value === selectedDeviceId)?.description ??
-        settings.mpvAudioDeviceDescription ??
-        null;
+    const { description: audioDeviceDescription, id: selectedDeviceId } =
+        resolveSelectedAudioDevice(
+            audioDevices,
+            playbackType,
+            audioDeviceId,
+            settings.mpvAudioDeviceDescription,
+        );
     const deviceProfile =
         playbackType === PlayerType.LOCAL && selectedDeviceId
             ? resolveDeviceProfile(
@@ -213,17 +233,25 @@ export const AudioSettings = memo(() => {
         },
         {
             control: (
-                <Select
-                    clearable
-                    data={audioDevices}
-                    disabled={!isElectron()}
-                    onChange={(e) =>
-                        setSettings({
-                            playback: resolveAudioDeviceSettings(playbackType, audioDevices, e),
-                        })
-                    }
-                    value={selectedDeviceId}
-                />
+                <Group gap="xs" wrap="nowrap">
+                    <Select
+                        clearable
+                        data={audioDevices}
+                        disabled={!isElectron()}
+                        onChange={(e) =>
+                            setSettings({
+                                playback: resolveAudioDeviceSettings(playbackType, audioDevices, e),
+                            })
+                        }
+                        value={selectedDeviceId}
+                    />
+                    {playbackType === PlayerType.LOCAL && selectedDeviceId && (
+                        <DeviceCapabilitiesButton
+                            description={audioDeviceDescription}
+                            deviceId={selectedDeviceId}
+                        />
+                    )}
+                </Group>
             ),
             description: t('setting.audioDevice', { context: 'description' }),
             isHidden: !isElectron(),

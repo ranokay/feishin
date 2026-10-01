@@ -246,8 +246,10 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
     const handledStop = useRef<null | string>(null);
     const playbackKey = radioPlaybackKey ?? currentSong?._uniqueId ?? null;
     const strictPlaybackState = retainedStop?.playbackKey === playbackKey ? retainedStop : null;
-    // Continue-in-Standard must also release the device profile when that is
-    // what forced strict playback; otherwise the stop immediately reappears.
+    // Continue-in-Standard releases whichever scope forced strict playback: the
+    // device profile when one is set, otherwise the global policy. The global is
+    // also released when it is still Bit-Perfect, because the profile release
+    // alone would leave the stop active.
     const deviceProfile =
         playbackType === PlayerType.LOCAL
             ? resolveDeviceProfile(
@@ -259,6 +261,7 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
     const deviceProfileKey = deviceProfile?.key ?? null;
     const deviceProfileDescription = deviceProfile?.profile.description ?? null;
     const deviceProfileOverride = deviceProfile?.profile.policyOverride ?? null;
+    const globalPlaybackPolicy = playbackSettings.playbackPolicy;
     const stop = useMemo(
         () =>
             resolveStrictPlaybackStop(playbackPolicy, playbackType, strictPlaybackState) ??
@@ -310,12 +313,16 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
                     onCancel={() => closeModal(STRICT_PLAYBACK_STOP_MODAL_ID)}
                     onConfirm={() => {
                         closeModal(STRICT_PLAYBACK_STOP_MODAL_ID);
-                        setSettings({ playback: { playbackPolicy: 'standard' } });
-                        if (deviceProfileKey && deviceProfileOverride === 'bit-perfect') {
+                        const profileForcedStrict =
+                            deviceProfileKey !== null && deviceProfileOverride === 'bit-perfect';
+                        if (profileForcedStrict) {
                             setPlaybackDeviceProfile(deviceProfileKey, {
                                 description: deviceProfileDescription,
                                 policyOverride: 'standard',
                             });
+                        }
+                        if (!profileForcedStrict || globalPlaybackPolicy === 'bit-perfect') {
+                            setSettings({ playback: { playbackPolicy: 'standard' } });
                         }
                         mediaPlay();
                     }}
@@ -339,6 +346,7 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
         deviceProfileDescription,
         deviceProfileKey,
         deviceProfileOverride,
+        globalPlaybackPolicy,
         mediaPause,
         mediaPlay,
         playbackPolicy,

@@ -183,6 +183,18 @@ function deviceEntry(
     };
 }
 
+function deviceNotActiveEntry(field: DeviceCapabilityField): DeviceCapabilityEntry {
+    return {
+        activeFormat: null,
+        detail: null,
+        field,
+        formats: null,
+        level: 'unknown',
+        reason: 'device-not-active',
+        value: null,
+    };
+}
+
 function formatRate(rate: number): string {
     return `${Number.isInteger(rate) ? rate : rate.toFixed(1)} Hz`;
 }
@@ -206,15 +218,7 @@ function outputEntry(
     deviceConfirmed: boolean,
 ): DeviceCapabilityEntry {
     if (isDeviceActiveElsewhere(input, deviceConfirmed)) {
-        return {
-            activeFormat: null,
-            detail: null,
-            field: 'output',
-            formats: null,
-            level: 'unknown',
-            reason: 'device-not-active',
-            value: null,
-        };
+        return deviceNotActiveEntry('output');
     }
     const params = input.outputParams;
     const parts = [
@@ -290,15 +294,7 @@ function physicalFormatsReason(
 
 function routeEntry(input: DeviceCapabilityInput, deviceConfirmed: boolean): DeviceCapabilityEntry {
     if (isDeviceActiveElsewhere(input, deviceConfirmed)) {
-        return {
-            activeFormat: null,
-            detail: null,
-            field: 'route',
-            formats: null,
-            level: 'unknown',
-            reason: 'device-not-active',
-            value: null,
-        };
+        return deviceNotActiveEntry('route');
     }
     if (input.route) {
         return {

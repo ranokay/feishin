@@ -41,17 +41,27 @@ const REASON_KEY: Record<DeviceCapabilityReason, string> = {
     'platform-unavailable': 'reasonPlatform',
 };
 
+function capabilityDisplayValue(
+    entry: DeviceCapabilityEntry,
+    translate: (key: string) => string,
+): string {
+    if (entry.level === 'unknown') {
+        return translate('player.deviceCapabilities_unknown');
+    }
+    if (entry.value !== null) {
+        return entry.value;
+    }
+    if (entry.detail === 'exclusive-requested') {
+        return translate('player.deviceCapabilities_exclusiveRequested');
+    }
+    return translate('player.deviceCapabilities_unknown');
+}
+
 const CapabilityRow = ({ entry }: { entry: DeviceCapabilityEntry }) => {
     const { t: translate } = useTranslation();
     const label = translate(`player.deviceCapabilities_${FIELD_KEY[entry.field]}`);
     const exclusiveRequested = entry.detail === 'exclusive-requested';
-    const displayValue =
-        entry.level === 'unknown'
-            ? translate('player.deviceCapabilities_unknown')
-            : (entry.value ??
-              (exclusiveRequested
-                  ? translate('player.deviceCapabilities_exclusiveRequested')
-                  : null));
+    const displayValue = capabilityDisplayValue(entry, translate);
     const row = (
         <Group align="flex-start" gap="xs" justify="space-between" wrap="nowrap">
             <Text c="dim" size="xs" style={{ flexShrink: 0 }}>

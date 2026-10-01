@@ -51,6 +51,9 @@ const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mp
 
 // Observability-only second IPC client. Never routes commands; node-mpv keeps command duty.
 let audioStateService: AudioStateService | null = null;
+// Monotonic across service restarts and log clears, so the renderer's
+// lastEventId-gated event log still refetches when a fallback event appears.
+let audioStateFallbackEventId = 0;
 let audioStateFallbackEvents: AudioEngineEvent[] = [];
 let audioStateFallbackSnapshot: AudioSnapshot | null = null;
 let queuedStreams: Array<MpvLoadSource | undefined> = [];
@@ -77,8 +80,11 @@ const publishStrictObservabilityFailure = () => {
     const detail = 'strict property observability unavailable';
     const state = createObservedAudioState();
     state.strictValidationError = detail;
-    audioStateFallbackSnapshot = deriveSnapshot(state, 1, 1);
-    audioStateFallbackEvents = [{ detail, id: 1, time: Date.now(), type: 'strict-invalidated' }];
+    audioStateFallbackEventId += 1;
+    audioStateFallbackSnapshot = deriveSnapshot(state, 1, audioStateFallbackEventId);
+    audioStateFallbackEvents = [
+        { detail, id: audioStateFallbackEventId, time: Date.now(), type: 'strict-invalidated' },
+    ];
     getMainWindow()?.webContents.send('renderer-audio-state-changed', audioStateFallbackSnapshot);
 };
 

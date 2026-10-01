@@ -354,6 +354,7 @@ export class AudioStateService {
     private readonly events: AudioEngineEvent[] = [];
     private readonly intervalMs: number;
     private readonly invalidatedStrictProperties = new Set<string>();
+    private lastEventId = 0;
     private lastSequence = 0;
     private lastVerification: LastServerVerification | null = null;
     private readonly log: {
@@ -423,7 +424,7 @@ export class AudioStateService {
     }
 
     getSnapshot(): AudioSnapshot {
-        return deriveSnapshot(this.state, this.lastSequence, this.nextEventId - 1);
+        return deriveSnapshot(this.state, this.lastSequence, this.lastEventId);
     }
 
     /**
@@ -684,7 +685,7 @@ export class AudioStateService {
 
     private emitSnapshot(): void {
         this.lastSequence += 1;
-        this.onBroadcast(deriveSnapshot(this.state, this.lastSequence, this.nextEventId - 1));
+        this.onBroadcast(deriveSnapshot(this.state, this.lastSequence, this.lastEventId));
     }
 
     private handleClose(): void {
@@ -729,8 +730,10 @@ export class AudioStateService {
     }
 
     private pushEvent(event: PendingAudioEngineEvent): void {
-        this.events.push({ ...event, id: this.nextEventId, time: Date.now() });
+        const id = this.nextEventId;
         this.nextEventId += 1;
+        this.lastEventId = id;
+        this.events.push({ ...event, id, time: Date.now() });
         if (this.events.length > this.eventLimit) {
             this.events.splice(0, this.events.length - this.eventLimit);
         }

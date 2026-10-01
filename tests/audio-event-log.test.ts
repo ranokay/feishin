@@ -87,6 +87,15 @@ describe('filterAudioEvents', () => {
         );
     });
 
+    it('searches the localized event label when a resolver is provided', () => {
+        const filtered = filterAudioEvents(events, {
+            labelFor: (type) => (type === 'exclusive-failed' ? 'Exklusiv fehlgeschlagen' : type),
+            search: 'FEHLGESCHLAGEN',
+        });
+
+        expect(filtered.map((item) => item.type)).toEqual(['exclusive-failed']);
+    });
+
     it('ignores blank search terms and combines search with the other filters', () => {
         expect(filterAudioEvents(events, { search: '   ' })).toHaveLength(4);
         expect(

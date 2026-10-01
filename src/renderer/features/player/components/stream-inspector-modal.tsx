@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { EvidenceDot, formatServerStage, StageRow } from './signal-path-rows';
@@ -22,6 +22,7 @@ import {
     AUDIO_EVENT_CATEGORIES,
     AUDIO_EVENT_SEVERITIES,
     type AudioEngineEvent,
+    type AudioEngineEventType,
     type AudioEventCategory,
     type AudioEventSeverity,
     audioEventSeverity,
@@ -97,16 +98,28 @@ export const StreamInspectorModal = () => {
     const [categoryFilter, setCategoryFilter] = useState<'all' | AudioEventCategory>('all');
     const [severityFilter, setSeverityFilter] = useState<'all' | AudioEventSeverity>('all');
     const [searchFilter, setSearchFilter] = useState('');
+    const loadGeneration = useRef(0);
 
-    useEffect(() => {
+    const loadEvents = useCallback(() => {
         if (!window.api?.audioState?.getEvents) {
             return;
         }
+        loadGeneration.current += 1;
+        const generation = loadGeneration.current;
         window.api.audioState
             .getEvents()
-            .then(setEvents)
+            .then((next) => {
+                // Discard a response that raced a clear or a newer request.
+                if (generation === loadGeneration.current) {
+                    setEvents(next);
+                }
+            })
             .catch((error) => logger.warn('Failed to load audio engine event log', { error }));
-    }, [lastEventId]);
+    }, []);
+
+    useEffect(() => {
+        loadEvents();
+    }, [lastEventId, loadEvents]);
 
     const source = useMemo(
         () =>
@@ -137,13 +150,22 @@ export const StreamInspectorModal = () => {
         );
     }
 
+    const eventLabel = (type: AudioEngineEventType) =>
+        t(`player.signalPath_event_${type.replace(/-/g, '_')}`);
+
     const filteredEvents = filterAudioEvents(events, {
         category: categoryFilter,
+        labelFor: eventLabel,
         search: searchFilter,
         severity: severityFilter,
     });
 
     const clearEvents = () => {
+        if (!window.api?.audioState?.clearEvents) {
+            return;
+        }
+        // Invalidate in-flight fetches: their results predate the clear.
+        loadGeneration.current += 1;
         window.api.audioState
             .clearEvents()
             .then(() => setEvents([]))
@@ -314,7 +336,7 @@ export const StreamInspectorModal = () => {
                                     {dayjs(event.time).format('HH:mm:ss')}
                                 </Text>
                                 <Text size="xs" style={{ flexShrink: 0 }}>
-                                    {t(`player.signalPath_event_${event.type.replace(/-/g, '_')}`)}
+                                    {eventLabel(event.type)}
                                 </Text>
                                 {event.detail && (
                                     <Text c="dim" size="xs" truncate>

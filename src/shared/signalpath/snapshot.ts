@@ -52,7 +52,11 @@ export interface AudioSnapshot {
     gaplessAudio: null | string;
     /** Most recent typed engine failure; cleared when the next track starts. */
     lastError?: AudioEngineFailure | null;
-    /** Id of the newest recorded engine event; 0 when the log is empty. Advances only on record. */
+    /**
+     * Monotonic id of the newest recorded engine event, 0 before the first
+     * record. Clearing the log does not reset it, so consumers still see new
+     * records as advances.
+     */
     lastEventId: number;
     muted: boolean | null;
     outputParams: null | OutputParams;

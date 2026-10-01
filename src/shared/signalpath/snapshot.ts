@@ -10,6 +10,7 @@ export const AUDIO_ENGINE_EVENT_TYPES = [
     'device-lost',
     'device-opened',
     'device-selected',
+    'device-transition',
     'engine-error',
     'exclusive-attempted',
     'exclusive-failed',

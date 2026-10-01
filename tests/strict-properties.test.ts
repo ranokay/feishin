@@ -84,6 +84,19 @@ describe('Bit-Perfect runtime property pins', () => {
         expect(filterPolicyExtraParameters('exclusive', parameters)).toEqual(parameters);
     });
 
+    it('rejects user gapless arguments under Bit-Perfect so strict playback cannot resample', () => {
+        const parameters = [
+            '--cache=yes',
+            '--gapless-audio=yes',
+            '--gapless-audio',
+            '  --gapless-audio=no  ',
+        ];
+
+        expect(filterPolicyExtraParameters('bit-perfect', parameters)).toEqual(['--cache=yes']);
+        expect(filterPolicyExtraParameters('standard', parameters)).toEqual(parameters);
+        expect(filterPolicyExtraParameters('exclusive', parameters)).toEqual(parameters);
+    });
+
     it('normalizes mpv filter observations before comparing them', () => {
         const filterPin = BIT_PERFECT_PROPERTY_PINS[0];
 

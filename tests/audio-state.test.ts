@@ -136,7 +136,7 @@ describe('applyPropertyValue', () => {
         expect(state.decodedParams).toBeNull();
     });
 
-    it('emits rate changes for output params with the output stage label', () => {
+    it('emits a device transition when the output rate changes, keeping decoded rate changes separate', () => {
         const state = createObservedAudioState();
 
         applyPropertyValue(state, 'audio-out-params', {
@@ -150,7 +150,57 @@ describe('applyPropertyValue', () => {
                 format: 's32',
                 samplerate: 48000,
             }),
-        ).toEqual([{ detail: 'output rate 44100 -> 48000', type: 'rate-changed' }]);
+        ).toEqual([{ detail: '44100 -> 48000', type: 'device-transition' }]);
+
+        applyPropertyValue(state, 'audio-params', {
+            channels: 2,
+            format: 's16',
+            samplerate: 44100,
+        });
+        expect(
+            applyPropertyValue(state, 'audio-params', {
+                channels: 2,
+                format: 's16',
+                samplerate: 48000,
+            }),
+        ).toEqual([{ detail: 'decoded rate 44100 -> 48000', type: 'rate-changed' }]);
+    });
+
+    it('keeps the device transition visible when the output rate passes through unavailable', () => {
+        const state = createObservedAudioState();
+        applyPropertyValue(state, 'audio-out-params', {
+            channels: 2,
+            format: null,
+            samplerate: 44100,
+        });
+
+        // mpv briefly reports the property unavailable while the AO reopens.
+        applyPropertyValue(state, 'audio-out-params', null);
+
+        expect(
+            applyPropertyValue(state, 'audio-out-params', {
+                channels: 2,
+                format: null,
+                samplerate: 96000,
+            }),
+        ).toEqual([{ detail: '44100 -> 96000', type: 'device-transition' }]);
+    });
+
+    it('does not emit a device transition when the output rate is unchanged', () => {
+        const state = createObservedAudioState();
+        applyPropertyValue(state, 'audio-out-params', {
+            channels: 2,
+            format: 's16',
+            samplerate: 44100,
+        });
+
+        expect(
+            applyPropertyValue(state, 'audio-out-params', {
+                channels: 2,
+                format: 's32',
+                samplerate: 44100,
+            }),
+        ).toEqual([{ detail: 'output format s16/2ch -> s32/2ch', type: 'format-changed' }]);
     });
 
     it('reports filter changes by filter name list', () => {

@@ -202,6 +202,7 @@ export const MpvSettings = memo(() => {
                         },
                     ]}
                     defaultValue={settings.mpvProperties.gaplessAudio}
+                    disabled={isBitPerfect}
                     onChange={(e) => handleSetMpvProperty('gaplessAudio', e)}
                 />
             ),
@@ -209,6 +210,7 @@ export const MpvSettings = memo(() => {
                 context: 'description',
             }),
             isHidden: settings.type !== PlayerType.LOCAL,
+            note: isBitPerfect ? t('setting.bitPerfectControlLocked') : undefined,
             title: t('setting.gaplessAudio'),
         },
         {

@@ -6,6 +6,7 @@ import { AudioStateService } from '../src/main/features/core/player/mpv/audio-st
 import { MpvIpcConnection } from '../src/main/features/core/player/mpv/ipc-client';
 import { writeWavFixture } from './fixtures/audio-fixtures';
 import { MpvTestProcess } from './harness/mpv-test-process';
+import { waitFor } from './harness/wait-for';
 
 const mpvAvailable = await MpvTestProcess.isAvailable();
 
@@ -19,15 +20,17 @@ let snapshots: AudioSnapshot[] = [];
 
 const fixturesDir = await (await import('./fixtures/audio-fixtures')).createFixtureDirectory();
 
-const writeSineWav = async (sampleRate: number) =>
+const writeWav = async (sampleRate: number, durationSec = 3) =>
     writeWavFixture(fixturesDir, {
         bitDepth: 16,
         channels: 2,
-        durationSec: 3,
+        durationSec,
         frequencyHz: 1000,
         kind: 'sine',
         sampleRate,
     });
+
+const eventsSince = (id: number) => service.getEvents().filter((event) => event.id > id);
 
 const waitForSnapshot = async (
     predicate: (snapshot: AudioSnapshot) => boolean,
@@ -85,7 +88,7 @@ describe.skipIf(!mpvAvailable)('AudioStateService over real mpv playback', () =>
 
     it('delivers decoded-param snapshots within the coalescing window during playback', async () => {
         const startedAt = Date.now();
-        await mpv.request(['loadfile', await writeSineWav(44100)]);
+        await mpv.request(['loadfile', await writeWav(44100)]);
 
         const confirmed = await waitForSnapshot(
             (candidate) =>
@@ -129,7 +132,7 @@ describe.skipIf(!mpvAvailable)('AudioStateService over real mpv playback', () =>
 
     it('captures a rate-change transition with clean events and no stale mixes', async () => {
         snapshots = [];
-        await mpv.request(['loadfile', await writeSineWav(96000), 'replace']);
+        await mpv.request(['loadfile', await writeWav(96000), 'replace']);
 
         const final = await waitForSnapshot(
             (candidate) =>
@@ -142,11 +145,11 @@ describe.skipIf(!mpvAvailable)('AudioStateService over real mpv playback', () =>
 
         const events = service.getEvents();
         expect(events.some((event) => event.type === 'track-started')).toBe(true);
-        const rateChangedDetails = events
-            .filter((event) => event.type === 'rate-changed')
+        const transitionDetails = events
+            .filter((event) => event.type === 'device-transition')
             .map((event) => event.detail ?? '');
         expect(
-            rateChangedDetails.some(
+            transitionDetails.some(
                 (detail) => detail.includes('44100') && detail.includes('96000'),
             ),
         ).toBe(true);
@@ -164,6 +167,41 @@ describe.skipIf(!mpvAvailable)('AudioStateService over real mpv playback', () =>
         for (let index = 1; index < sequences.length; index += 1) {
             expect(sequences[index]).toBeGreaterThan(sequences[index - 1]);
         }
+    });
+
+    it('continues a same-rate appended track without a device-transition entry', async () => {
+        snapshots = [];
+        await mpv.request(['loadfile', await writeWav(44100, 2), 'replace']);
+        await waitForSnapshot((candidate) => candidate.outputParams?.samplerate === 44100);
+        const marker = service.getEvents().at(-1)?.id ?? 0;
+
+        await mpv.request(['loadfile', await writeWav(44100, 2), 'append']);
+        await waitFor(
+            () => eventsSince(marker).filter((event) => event.type === 'track-started').length >= 1,
+        );
+
+        expect(eventsSince(marker).filter((event) => event.type === 'device-transition')).toEqual(
+            [],
+        );
+    });
+
+    it('emits a device transition with both rates across a rate-boundary append', async () => {
+        snapshots = [];
+        await mpv.request(['loadfile', await writeWav(44100, 2), 'replace']);
+        // Only the output rate matters for the device baseline; the decoded
+        // observation can arrive late or not at all for short fixtures.
+        await waitForSnapshot((candidate) => candidate.outputParams?.samplerate === 44100);
+        const marker = service.getEvents().at(-1)?.id ?? 0;
+
+        await mpv.request(['loadfile', await writeWav(48000, 2), 'append']);
+        await waitFor(() =>
+            eventsSince(marker).some((event) => event.type === 'device-transition'),
+        );
+
+        const transition = eventsSince(marker).find((event) => event.type === 'device-transition');
+        expect(transition?.detail).toContain('44100');
+        expect(transition?.detail).toContain('48000');
+        await waitForSnapshot((candidate) => candidate.outputParams?.samplerate === 48000);
     });
 
     it('returns an ordered queryable event log capped below the limit', () => {

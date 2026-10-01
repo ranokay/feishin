@@ -591,7 +591,11 @@ export class AudioStateService {
         }
         if (evidence.route === 'transcoded') {
             this.log.warn(`Transcoded stream detected: ${evidence.detail ?? 'unknown mismatch'}`);
-            this.record({ detail: evidence.detail, type: 'transcode-detected' });
+            // Publish before the coalescing timer: a start-file landing inside the
+            // window clears serverRoute and would otherwise erase the only signal
+            // that strict playback must stop.
+            this.pushEvent({ detail: evidence.detail, type: 'transcode-detected' });
+            this.publishImmediately();
             return;
         }
         this.record({
@@ -642,6 +646,10 @@ export class AudioStateService {
             type: 'engine-error',
         });
         this.onEngineError?.(failure, this.state.playbackKey);
+        this.publishImmediately();
+    }
+
+    private publishImmediately(): void {
         if (this.broadcastTimer) {
             clearTimeout(this.broadcastTimer);
             this.broadcastTimer = null;

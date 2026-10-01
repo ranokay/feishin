@@ -855,6 +855,47 @@ describe('AudioStateService server-route verification', () => {
         service.dispose();
     });
 
+    it('publishes a transcode verdict immediately so a racing start-file cannot swallow it', async () => {
+        const connection = createStubConnection();
+        const broadcast = vi.fn();
+        const service = new AudioStateService(connection, {
+            broadcast,
+            intervalMs: 100,
+            probeStreamHeaders: async () => ({
+                acceptRanges: null,
+                contentLength: null,
+                contentType: 'audio/mpeg',
+            }),
+            resolvePlaybackKey: () => 'song-1',
+        });
+        await service.start();
+
+        connection.emit('property-change', {
+            data: [{ filename: 'https://x/stream', id: 10 }],
+            event: 'property-change',
+            name: 'playlist',
+        });
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 10 });
+        service.requestServerVerification(
+            { declaration: FLAC_DECLARATION, url: 'https://x/stream' },
+            'song-1',
+        );
+        await flushMicrotasks();
+
+        // Strict playback must stop on this verdict before the coalescing timer:
+        // a start-file landing inside the window synchronously clears serverRoute
+        // and would otherwise erase the only signal that Bit-Perfect is broken.
+        expect(broadcast).toHaveBeenCalledTimes(1);
+        expect(broadcast.mock.calls[0][0]).toMatchObject({
+            playbackKey: 'song-1',
+            serverRoute: expect.objectContaining({ route: 'transcoded' }),
+        });
+
+        connection.emit('start-file', { event: 'start-file', playlist_entry_id: 11 });
+        expect(service.getSnapshot().serverRoute ?? null).toBeNull();
+        service.dispose();
+    });
+
     it('finalizes immediately on headers, then re-checks when demuxer facts arrive', async () => {
         const connection = createStubConnection();
         const service = new AudioStateService(connection, {

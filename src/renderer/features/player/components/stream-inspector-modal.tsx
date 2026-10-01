@@ -7,7 +7,7 @@ import styles from './stream-inspector-modal.module.css';
 
 import { useAudioSnapshot, useAudioStateStore } from '/@/renderer/store/audio-state.store';
 import { usePlayerSong } from '/@/renderer/store/player.store';
-import { useSettingsStore } from '/@/renderer/store/settings.store';
+import { useEffectivePlaybackPolicy, useSettingsStore } from '/@/renderer/store/settings.store';
 import { logger } from '/@/renderer/utils/logger';
 import { Code } from '/@/shared/components/code/code';
 import { CopyButton } from '/@/shared/components/copy-button/copy-button';
@@ -83,7 +83,7 @@ function Section({
 export const StreamInspectorModal = () => {
     const { t } = useTranslation();
     const playbackType = useSettingsStore((state) => state.playback.type);
-    const policy = useSettingsStore((state) => state.playback.playbackPolicy);
+    const policy = useEffectivePlaybackPolicy();
     const replayGainMode = useSettingsStore((state) => state.playback.mpvProperties.replayGainMode);
     const song = usePlayerSong();
     const snapshot = useAudioSnapshot();

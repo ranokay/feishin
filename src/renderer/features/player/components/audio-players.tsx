@@ -38,6 +38,7 @@ import {
     updateQueueFavorites,
     updateQueueRatings,
     useCurrentServerId,
+    useEffectivePlaybackPolicy,
     usePlaybackSettings,
     usePlaybackType,
     usePlayerActions,
@@ -57,6 +58,7 @@ import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
 import {
     type PlaybackPolicyPlayerType,
+    resolveDeviceProfile,
     resolveFallbackPlaybackType,
     resolveStrictPlaybackStop,
     type StrictPlaybackStop,
@@ -137,9 +139,9 @@ export const AudioPlayers = () => {
     const {
         audioDeviceId,
         mpvProperties: { audioSampleRateHz },
-        playbackPolicy,
         webAudio,
     } = usePlaybackSettings();
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const { setWebAudio, webAudio: audioContext } = useWebAudio();
     const [fallbackRequest, setFallbackRequest] = useState({
         playbackPolicy,
@@ -234,14 +236,32 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
     const currentSong = usePlayerSong();
     const playerStatus = usePlayerStatus();
     const radioPlaybackKey = useRadioPlaybackKey();
-    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const playbackType = usePlaybackType();
+    const playbackPolicy = useEffectivePlaybackPolicy();
+    const playbackSettings = usePlaybackSettings();
     const { mediaPause, mediaPlay } = usePlayerActions();
-    const { setSettings } = useSettingsStoreActions();
+    const { setPlaybackDeviceProfile, setSettings } = useSettingsStoreActions();
     const clearStrictPlaybackStop = useAudioStateStore((state) => state.clearStrictPlaybackStop);
     const syncPlaybackKey = useAudioStateStore((state) => state.syncPlaybackKey);
     const handledStop = useRef<null | string>(null);
     const playbackKey = radioPlaybackKey ?? currentSong?._uniqueId ?? null;
     const strictPlaybackState = retainedStop?.playbackKey === playbackKey ? retainedStop : null;
+    // Continue-in-Standard releases whichever scope forced strict playback: the
+    // device profile when one is set, otherwise the global policy. The global is
+    // also released when it is still Bit-Perfect, because the profile release
+    // alone would leave the stop active.
+    const deviceProfile =
+        playbackType === PlayerType.LOCAL
+            ? resolveDeviceProfile(
+                  playbackSettings.deviceProfiles,
+                  playbackSettings.mpvAudioDeviceId,
+                  playbackSettings.mpvAudioDeviceDescription,
+              )
+            : null;
+    const deviceProfileKey = deviceProfile?.key ?? null;
+    const deviceProfileDescription = deviceProfile?.profile.description ?? null;
+    const deviceProfileOverride = deviceProfile?.profile.policyOverride ?? null;
+    const globalPlaybackPolicy = playbackSettings.playbackPolicy;
     const stop = useMemo(
         () =>
             resolveStrictPlaybackStop(playbackPolicy, playbackType, strictPlaybackState) ??
@@ -293,7 +313,17 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
                     onCancel={() => closeModal(STRICT_PLAYBACK_STOP_MODAL_ID)}
                     onConfirm={() => {
                         closeModal(STRICT_PLAYBACK_STOP_MODAL_ID);
-                        setSettings({ playback: { playbackPolicy: 'standard' } });
+                        const profileForcedStrict =
+                            deviceProfileKey !== null && deviceProfileOverride === 'bit-perfect';
+                        if (profileForcedStrict) {
+                            setPlaybackDeviceProfile(deviceProfileKey, {
+                                description: deviceProfileDescription,
+                                policyOverride: 'standard',
+                            });
+                        }
+                        if (!profileForcedStrict || globalPlaybackPolicy === 'bit-perfect') {
+                            setSettings({ playback: { playbackPolicy: 'standard' } });
+                        }
                         mediaPlay();
                     }}
                 >
@@ -313,11 +343,16 @@ const StrictPlaybackGuard = ({ fallbackRequested }: { fallbackRequested: boolean
         });
     }, [
         clearStrictPlaybackStop,
+        deviceProfileDescription,
+        deviceProfileKey,
+        deviceProfileOverride,
+        globalPlaybackPolicy,
         mediaPause,
         mediaPlay,
         playbackPolicy,
         playbackType,
         playerStatus,
+        setPlaybackDeviceProfile,
         setSettings,
         standardWouldHelp,
         stop,

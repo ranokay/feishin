@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useIsLocalVisualizerSurfaceVisible } from '/@/renderer/features/player/hooks/use-is-local-visualizer-surface-visible';
 import { useVisualizerSystemAudio } from '/@/renderer/features/player/hooks/use-visualizer-system-audio';
 import { closeLocalVisualizerSurfaces } from '/@/renderer/features/player/utils/close-local-visualizer-surfaces';
-import { useMpvSettings, usePlaybackSettings, usePlaybackType } from '/@/renderer/store';
+import { useEffectivePlaybackPolicy, useMpvSettings, usePlaybackType } from '/@/renderer/store';
 import { Button } from '/@/shared/components/button/button';
 import { Group } from '/@/shared/components/group/group';
 import { Modal } from '/@/shared/components/modal/modal';
@@ -49,7 +49,6 @@ function VisualizerSystemAudioBridge() {
     const { t } = useTranslation();
     const playbackType = usePlaybackType();
     const { audioExclusiveMode } = useMpvSettings();
-    const { playbackPolicy } = usePlaybackSettings();
     const isVisualizerSurfaceVisible = useIsLocalVisualizerSurfaceVisible();
     const [promptState, setPromptState] = useState<PromptState>('loading');
     const [sessionAllowCapture, setSessionAllowCapture] = useState(false);
@@ -58,6 +57,7 @@ function VisualizerSystemAudioBridge() {
         useDisclosure(false);
 
     const isExclusiveModeEnabled = audioExclusiveMode === 'yes';
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const isSystemAudioBlocked = isExclusiveModeEnabled || isBitPerfect;
     const isVisualizerBlockedByPlaybackPolicy =

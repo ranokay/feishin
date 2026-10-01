@@ -14,7 +14,11 @@ import {
     SettingOption,
     SettingsSection,
 } from '/@/renderer/features/settings/components/settings-section';
-import { usePlaybackSettings, useSettingsStoreActions } from '/@/renderer/store/settings.store';
+import {
+    useEffectivePlaybackPolicy,
+    usePlaybackSettings,
+    useSettingsStoreActions,
+} from '/@/renderer/store/settings.store';
 import { Button } from '/@/shared/components/button/button';
 import { Divider } from '/@/shared/components/divider/divider';
 import { Group } from '/@/shared/components/group/group';
@@ -267,7 +271,8 @@ export const EqSettings = memo(() => {
     const { t } = useTranslation();
     const settings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
-    const isBitPerfect = isBitPerfectPlaybackActive(settings.playbackPolicy, settings.type);
+    const playbackPolicy = useEffectivePlaybackPolicy();
+    const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, settings.type);
 
     // Ref pattern to avoid stale closure when reading webAudio DSP nodes.
     // webAudio?.dsp is undefined at callback creation time; the closure

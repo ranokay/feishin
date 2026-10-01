@@ -10,6 +10,7 @@ import { AudioPlayer, PlayerOnProgressProps } from '/@/renderer/features/player/
 import { useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { getMpvProperties } from '/@/renderer/features/settings/components/playback/mpv-properties';
 import {
+    useEffectivePlaybackPolicy,
     usePlaybackSettings,
     usePlayerActions,
     usePlayerSong,
@@ -68,7 +69,7 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
     const { mpvAudioDeviceId, transcode } = usePlaybackSettings();
     const mpvExtraParameters = useSettingsStore((store) => store.playback.mpvExtraParameters);
     const mpvProperties = useSettingsStore((store) => store.playback.mpvProperties);
-    const playbackPolicy = useSettingsStore((store) => store.playback.playbackPolicy);
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const [reloadTrigger, setReloadTrigger] = useState(0);
 
     useEffect(() => {

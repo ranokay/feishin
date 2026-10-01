@@ -6,6 +6,7 @@ import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
     getDefaultAudioDevice,
+    resolveAudioDeviceSettings,
     useAudioDevices,
 } from '/@/renderer/features/settings/components/playback/audio-settings';
 import {
@@ -22,6 +23,7 @@ import {
 } from '/@/renderer/store';
 import {
     useCombinedLyricsAndVisualizer,
+    useEffectivePlaybackPolicy,
     useMicrotonalPitchControls,
     usePlaybackSettings,
     useSettingsStore,
@@ -318,9 +320,7 @@ const AudioDeviceConfig = () => {
                 setSettings({
                     playback: {
                         ...playbackSettings,
-                        ...(playbackType === PlayerType.LOCAL
-                            ? { mpvAudioDeviceId: e }
-                            : { audioDeviceId: e }),
+                        ...resolveAudioDeviceSettings(playbackType, audioDevices, e),
                     },
                 });
             }}
@@ -431,7 +431,8 @@ export const PlaybackSpeedSlider = () => {
     const { t } = useTranslation();
     const speed = usePlayerSpeed();
     const { setSpeed } = usePlayerActions();
-    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const playbackType = usePlaybackType();
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const { bpm } = usePlayerSongProperties(['bpm']) ?? {};
     const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const displayedSpeed = isBitPerfect ? 1 : speed;
@@ -480,7 +481,8 @@ export const PitchControls = () => {
     const microtonal = useMicrotonalPitchControls();
     const speed = usePlayerSpeed();
     const { setSpeed } = usePlayerActions();
-    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const playbackType = usePlaybackType();
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const displayedSpeed = isBitPerfect ? 1 : speed;
 

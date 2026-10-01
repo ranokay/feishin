@@ -6,9 +6,15 @@ import styles from './signal-path-badge.module.css';
 import { EvidenceDot, formatServerStage, StageRow } from './signal-path-rows';
 import { StreamInspectorModal } from './stream-inspector-modal';
 
+import { getMpvAudioDevices } from '/@/renderer/features/settings/components/playback/audio-settings';
 import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
 import { usePlayerSong, usePlayerStore } from '/@/renderer/store/player.store';
-import { useSettingsStore } from '/@/renderer/store/settings.store';
+import {
+    useEffectivePlaybackPolicy,
+    usePlaybackSettings,
+    useSettingsStore,
+    useSettingsStoreActions,
+} from '/@/renderer/store/settings.store';
 import { Button } from '/@/shared/components/button/button';
 import { Group } from '/@/shared/components/group/group';
 import { Popover } from '/@/shared/components/popover/popover';
@@ -20,7 +26,9 @@ import {
     declareSource,
     type IntegrityStatus,
     isExclusiveRoute,
+    normalizeMpvDeviceId,
     type ProcessingEntry,
+    resolveDeviceProfile,
 } from '/@/shared/signalpath';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
@@ -113,11 +121,37 @@ const ProcessingRow = ({
 export const SignalPathBadge = () => {
     const { t } = useTranslation();
     const playbackType = useSettingsStore((state) => state.playback.type);
-    const policy = useSettingsStore((state) => state.playback.playbackPolicy);
+    const playbackSettings = usePlaybackSettings();
+    const policy = useEffectivePlaybackPolicy();
+    const { setPlaybackDeviceProfile } = useSettingsStoreActions();
     const replayGainMode = useSettingsStore((state) => state.playback.mpvProperties.replayGainMode);
     const song = usePlayerSong();
     const playerStatus = usePlayerStore((state) => state.player.status);
     const snapshot = useAudioSnapshot();
+
+    const deviceId = normalizeMpvDeviceId(playbackSettings.mpvAudioDeviceId);
+    const deviceProfile = resolveDeviceProfile(
+        playbackSettings.deviceProfiles,
+        deviceId,
+        playbackSettings.mpvAudioDeviceDescription,
+    );
+
+    const toggleDeviceProfile = async () => {
+        if (deviceProfile) {
+            setPlaybackDeviceProfile(deviceProfile.key, null);
+            return;
+        }
+        // Prefer the live description: the stored one may be stale or missing on
+        // installs that picked the device before descriptions were persisted.
+        const description =
+            (await getMpvAudioDevices()).find((device) => device.value === deviceId)?.description ??
+            playbackSettings.mpvAudioDeviceDescription ??
+            null;
+        setPlaybackDeviceProfile(deviceId, {
+            description,
+            policyOverride: 'bit-perfect',
+        });
+    };
 
     const source = useMemo(
         () =>
@@ -194,6 +228,16 @@ export const SignalPathBadge = () => {
                         label={t('player.signalPath_stageOutput')}
                     />
                     <StageRow item={model.device} label={t('player.signalPath_stageDevice')} />
+                    <Button
+                        fullWidth
+                        onClick={() => void toggleDeviceProfile()}
+                        size="compact-xs"
+                        variant="light"
+                    >
+                        {deviceProfile
+                            ? t('player.signalPath_useGlobalPolicy')
+                            : t('player.signalPath_rememberBitPerfect')}
+                    </Button>
                     <Button fullWidth onClick={openInspector} size="compact-xs" variant="light">
                         {t('player.signalPath_openInspector')}
                     </Button>

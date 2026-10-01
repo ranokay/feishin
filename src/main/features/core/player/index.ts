@@ -895,7 +895,7 @@ ipcMain.handle(
 
 ipcMain.handle(
     'player-get-audio-devices',
-    async (): Promise<{ label: string; value: string }[]> => {
+    async (): Promise<{ description: string; label: string; value: string }[]> => {
         try {
             const instance = getMpvInstance();
             let tempInstance: MpvAPI | null = null;
@@ -928,6 +928,7 @@ ipcMain.handle(
                     const description = device.description || '';
                     const label = description ? `${name} (${description})` : name;
                     return {
+                        description,
                         label,
                         value: name,
                     };

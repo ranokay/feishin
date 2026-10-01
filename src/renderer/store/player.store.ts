@@ -9,7 +9,10 @@ import { createWithEqualityFn } from 'zustand/traditional';
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { useRadioStore as useRadioPlayerStore } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { createSelectors } from '/@/renderer/lib/zustand';
-import { useSettingsStore } from '/@/renderer/store/settings.store';
+import {
+    resolvePlaybackPolicyForSettings,
+    useSettingsStore,
+} from '/@/renderer/store/settings.store';
 import {
     setTimestamp as setTimestampStore,
     useTimestampStoreBase,
@@ -338,15 +341,24 @@ function regenerateShuffledIndexesIfNeeded(state: {
     }
 }
 
+// Controls treat only active local Bit-Perfect as strict; exclusive policies
+// and non-local playback keep their normal controls.
+function resolveStrictControlPolicy(): 'bit-perfect' | 'standard' {
+    const playback = useSettingsStore.getState().playback;
+    const policy = resolvePlaybackPolicyForSettings(playback);
+    return isBitPerfectPlaybackActive(policy, playback.type) ? 'bit-perfect' : 'standard';
+}
+
 // Strict playback pins runtime values without overwriting the user's values for other policies.
 function shouldBlockPlaybackControl(control: 'speed' | 'volume', status: PlayerStatus): boolean {
     const playback = useSettingsStore.getState().playback;
-    const policy = isBitPerfectPlaybackActive(playback.playbackPolicy, playback.type)
-        ? 'bit-perfect'
-        : 'standard';
     return (
-        resolvePlaybackControlAction(policy, playback.bitPerfectMuteBehavior, control, status) ===
-        'block'
+        resolvePlaybackControlAction(
+            resolveStrictControlPolicy(),
+            playback.bitPerfectMuteBehavior,
+            control,
+            status,
+        ) === 'block'
     );
 }
 
@@ -1367,14 +1379,8 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                 },
                 mediaToggleMute: () => {
                     const playback = useSettingsStore.getState().playback;
-                    const policy = isBitPerfectPlaybackActive(
-                        playback.playbackPolicy,
-                        playback.type,
-                    )
-                        ? 'bit-perfect'
-                        : 'standard';
                     const action = resolvePlaybackControlAction(
-                        policy,
+                        resolveStrictControlPolicy(),
                         playback.bitPerfectMuteBehavior,
                         'mute',
                         get().player.status,

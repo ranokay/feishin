@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import {
+    type DeviceProfileMap,
+    normalizeDeviceProfiles,
     normalizePlaybackPolicy,
     PLAYBACK_POLICIES,
     type PlaybackPolicy,
@@ -17,6 +19,15 @@ const migratePlaybackPolicy = (persisted: {
 }): { playback: { playbackPolicy: PlaybackPolicy } } => ({
     playback: {
         playbackPolicy: normalizePlaybackPolicy(persisted.playback?.playbackPolicy),
+    },
+});
+
+// Mirrors the store migration block for persisted settings version < 36.
+const migrateDeviceProfiles = (persisted: {
+    playback?: { deviceProfiles?: unknown };
+}): { playback: { deviceProfiles: DeviceProfileMap } } => ({
+    playback: {
+        deviceProfiles: normalizeDeviceProfiles(persisted.playback?.deviceProfiles),
     },
 });
 
@@ -70,5 +81,40 @@ describe('persisted playback policy migration', () => {
 
     it('tolerates missing playback sections', () => {
         expect(migratePlaybackPolicy({}).playback.playbackPolicy).toBe('standard');
+    });
+});
+
+describe('persisted device profile migration', () => {
+    it('fills an empty map for installs that predate the setting', () => {
+        expect(migrateDeviceProfiles({}).playback.deviceProfiles).toEqual({});
+    });
+
+    it('preserves saved profiles across migration', () => {
+        const migrated = migrateDeviceProfiles({
+            playback: {
+                deviceProfiles: {
+                    'usb-dac': { description: 'USB DAC', policyOverride: 'bit-perfect' },
+                },
+            },
+        });
+
+        expect(migrated.playback.deviceProfiles).toEqual({
+            'usb-dac': { description: 'USB DAC', policyOverride: 'bit-perfect' },
+        });
+    });
+
+    it('drops corrupted entries and keeps the valid ones', () => {
+        const migrated = migrateDeviceProfiles({
+            playback: {
+                deviceProfiles: {
+                    'usb-dac': { description: 'USB DAC', policyOverride: 'bit-perfect' },
+                    'wasapi/{guid}': { policyOverride: 'loud' },
+                },
+            },
+        });
+
+        expect(migrated.playback.deviceProfiles).toEqual({
+            'usb-dac': { description: 'USB DAC', policyOverride: 'bit-perfect' },
+        });
     });
 });

@@ -4,7 +4,12 @@ import { useCallback, useEffect } from 'react';
 
 import { showBitPerfectVolumeLockedToast } from '/@/renderer/features/player/utils/strict-control-feedback';
 import { useIsRadioActive, useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
-import { usePlaybackSettings, usePlayerActions, useVolumeWheelStep } from '/@/renderer/store';
+import {
+    useEffectivePlaybackPolicy,
+    usePlaybackSettings,
+    usePlayerActions,
+    useVolumeWheelStep,
+} from '/@/renderer/store';
 import { toast } from '/@/shared/components/toast/toast';
 import { isBitPerfectPlaybackActive } from '/@/shared/signalpath';
 
@@ -24,8 +29,9 @@ const toggleRadioPlayPause = () => {
 
 export const useMainPlayerListener = () => {
     const isRadioActive = useIsRadioActive();
-    const { playbackPolicy, type: playbackType } = usePlaybackSettings();
+    const { type: playbackType } = usePlaybackSettings();
     const volumeWheelStep = useVolumeWheelStep();
+    const playbackPolicy = useEffectivePlaybackPolicy();
     const isBitPerfect = isBitPerfectPlaybackActive(playbackPolicy, playbackType);
     const {
         decreaseVolume,

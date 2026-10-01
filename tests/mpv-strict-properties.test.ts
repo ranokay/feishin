@@ -15,6 +15,7 @@ import {
     policyStartupConfig,
 } from '../src/shared/signalpath';
 import { connectExtraClient } from './harness/mpv-test-process';
+import { waitFor } from './harness/wait-for';
 
 const mpvBinaryPath =
     process.env.FEISHIN_TEST_MPV_BINARY ??
@@ -29,16 +30,6 @@ let connection: MpvIpcConnection;
 let externalClient: Awaited<ReturnType<typeof connectExtraClient>>;
 let service: AudioStateService;
 let snapshots: AudioSnapshot[] = [];
-
-const waitFor = async (predicate: () => boolean, timeoutMs = 8000): Promise<void> => {
-    const deadline = Date.now() + timeoutMs;
-    while (!predicate()) {
-        if (Date.now() > deadline) {
-            throw new Error('timed out waiting for strict property state');
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-};
 
 beforeAll(async () => {
     if (!mpvAvailable) {

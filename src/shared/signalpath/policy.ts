@@ -115,6 +115,10 @@ export type ReplayGainMode = 'album' | 'no' | 'track';
  * Keeps user mpv arguments intact except where strict playback cannot safely
  * override them across every supported mpv version.
  */
+// Argv flags the Bit-Perfect preset pins itself; user copies would silently
+// compete with the strict pins, so they are dropped instead of ordered around.
+const BIT_PERFECT_BLOCKED_ARGUMENTS = ['--gapless-audio', '--volume-gain'];
+
 export function filterPolicyExtraParameters(
     policy: PlaybackPolicy,
     parameters: readonly string[],
@@ -124,11 +128,9 @@ export function filterPolicyExtraParameters(
     }
     return parameters.filter((parameter) => {
         const normalized = parameter.trim();
-        const isVolumeGain =
-            normalized === '--volume-gain' || normalized.startsWith('--volume-gain=');
-        const isGaplessAudio =
-            normalized === '--gapless-audio' || normalized.startsWith('--gapless-audio=');
-        return !isVolumeGain && !isGaplessAudio;
+        return !BIT_PERFECT_BLOCKED_ARGUMENTS.some(
+            (name) => normalized === name || normalized.startsWith(`${name}=`),
+        );
     });
 }
 

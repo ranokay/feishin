@@ -21,16 +21,19 @@ export interface DeriveAnalysisInput {
 
 /**
  * Descriptive findings only: each states what was measured next to what the
- * container claims. Neither says a file is fake; low measured resolution or
- * bandwidth can also come from the recording itself.
+ * container claims. It does not say a file is fake; low measured resolution
+ * can also come from the recording itself. Spectral rolloff is deliberately
+ * not classified: an energy percentile cannot prove where content ends, and
+ * FFmpeg's available high-pass filters leak too much to measure a Nyquist
+ * cliff directly.
  */
 export function classifyAnalysis(
     source: AnalysisSourceInfo,
     measurements: AnalysisMeasurements,
 ): AnalysisFinding[] {
     const findings: AnalysisFinding[] = [];
-    const { bitDepth, sampleRate } = source;
-    const { effectiveBitDepth, hfExtentHz, noiseFloorDbfs } = measurements;
+    const { bitDepth } = source;
+    const { effectiveBitDepth, noiseFloorDbfs } = measurements;
 
     if (
         bitDepth !== null &&
@@ -44,19 +47,6 @@ export function classifyAnalysis(
             kind: 'effective-resolution',
             noiseFloorDbfs,
             nominalBitDepth: bitDepth,
-        });
-    }
-
-    if (
-        sampleRate !== null &&
-        sampleRate >= 88200 &&
-        hfExtentHz !== null &&
-        hfExtentHz < 0.6 * (sampleRate / 2)
-    ) {
-        findings.push({
-            hfExtentHz,
-            kind: 'bandwidth-extent',
-            nominalNyquistHz: sampleRate / 2,
         });
     }
 
@@ -74,12 +64,12 @@ export function deriveAnalysisResult(input: DeriveAnalysisInput): AnalysisResult
             samplePeakDbfs !== null && rmsDbfs !== null ? samplePeakDbfs - rmsDbfs : null,
         dcOffset: astats?.dcOffset ?? null,
         effectiveBitDepth: effectiveBitDepthFrom(samplePeakDbfs, noiseFloorDbfs),
-        hfExtentHz: rolloffHz,
         loudnessLufs: ebur128?.integratedLufs ?? null,
         loudnessRangeLu: ebur128?.loudnessRangeLu ?? null,
         noiseFloorDbfs,
         rmsDbfs,
         samplePeakDbfs,
+        spectralRolloffHz: rolloffHz,
         truePeakDbfs: ebur128?.truePeakDbfs ?? null,
     };
 

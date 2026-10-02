@@ -140,25 +140,25 @@ describe('deriveAnalysisResult', () => {
             source: source16,
         });
 
-        expect(result.schemaVersion).toBe(1);
+        expect(result.schemaVersion).toBe(2);
         expect(result.analyzedAt).toBe('2026-10-02T00:00:00.000Z');
         expect(result.source).toEqual(source16);
         expect(result.measurements).toMatchObject({
             dcOffset: 0,
             effectiveBitDepth: null,
-            hfExtentHz: 1012.06,
             loudnessLufs: -21.1,
             loudnessRangeLu: 0,
             noiseFloorDbfs: -18.063656,
             rmsDbfs: -21.073712,
             samplePeakDbfs: -18.063656,
+            spectralRolloffHz: 1012.06,
             truePeakDbfs: -18.1,
         });
         expect(result.measurements.crestFactorDb).toBeCloseTo(3.010056, 5);
         expect(result.findings).toEqual([]);
     });
 
-    it('flags a resolution below the container and HF content below Nyquist', () => {
+    it('flags a resolution below the container, and nothing else', () => {
         const result = deriveAnalysisResult({
             analyzedAt: '2026-10-02T00:00:00.000Z',
             astats: { dcOffset: 0, noiseFloorDb: -97, peakLevelDb: -1, rmsLevelDb: -20 },
@@ -174,7 +174,6 @@ describe('deriveAnalysisResult', () => {
                 noiseFloorDbfs: -97,
                 nominalBitDepth: 24,
             },
-            { hfExtentHz: 18700, kind: 'bandwidth-extent', nominalNyquistHz: 48000 },
         ]);
     });
 

@@ -1,4 +1,4 @@
-export const ANALYSIS_SCHEMA_VERSION = 1;
+export const ANALYSIS_SCHEMA_VERSION = 2;
 
 export type AnalysisAvailability =
     | { available: false; reason: 'missing-ffmpeg' | 'missing-ffprobe' }
@@ -8,29 +8,23 @@ export type AnalysisAvailability =
           ffprobePath: string;
       };
 
-export type AnalysisFinding =
-    | {
-          effectiveBitDepth: number;
-          kind: 'effective-resolution';
-          noiseFloorDbfs: number;
-          nominalBitDepth: number;
-      }
-    | {
-          hfExtentHz: number;
-          kind: 'bandwidth-extent';
-          nominalNyquistHz: number;
-      };
+export type AnalysisFinding = {
+    effectiveBitDepth: number;
+    kind: 'effective-resolution';
+    noiseFloorDbfs: number;
+    nominalBitDepth: number;
+};
 
 export interface AnalysisMeasurements {
     crestFactorDb: null | number;
     dcOffset: null | number;
     effectiveBitDepth: null | number;
-    hfExtentHz: null | number;
     loudnessLufs: null | number;
     loudnessRangeLu: null | number;
     noiseFloorDbfs: null | number;
     rmsDbfs: null | number;
     samplePeakDbfs: null | number;
+    spectralRolloffHz: null | number;
     truePeakDbfs: null | number;
 }
 

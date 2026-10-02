@@ -4,7 +4,7 @@
  * order and the parser in parse.ts are a pair; change them together.
  */
 export const ANALYSIS_FILTER_CHAIN =
-    'astats=metadata=0:measure_overall=all,aspectralstats=measure=rolloff,ametadata=mode=print:file=-,ebur128=peak=true';
+    'astats=metadata=0:measure_overall=all,aspectralstats=measure=rolloff:win_size=32768,ametadata=mode=print:file=-,ebur128=peak=true';
 
 export function buildFfmpegAnalysisArgs(filePath: string): string[] {
     return [

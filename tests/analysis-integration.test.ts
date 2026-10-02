@@ -108,19 +108,18 @@ describe.skipIf(!ffmpegAvailable || !ffprobeAvailable)(
             expect(result.measurements.samplePeakDbfs).toBeCloseTo(-6, 0);
             expect(result.measurements.loudnessLufs).toBeLessThan(0);
             // Broadband noise keeps HF content, unlike the sine fixtures.
-            expect(result.measurements.hfExtentHz).toBeGreaterThan(15000);
+            expect(result.measurements.spectralRolloffHz).toBeGreaterThan(15000);
             expect(result.findings).toEqual([]);
         }, 60_000);
 
-        it('describes 44.1 kHz content in a 96 kHz container as band-limited', async () => {
+        it('reports a 44.1 kHz source upsampled into a 96 kHz container without over-claiming', async () => {
             const result = await analyze(upsampled96);
 
             expect(result.source.sampleRate).toBe(96000);
-            const bandwidth = result.findings.find(
-                (finding) => finding.kind === 'bandwidth-extent',
-            );
-            expect(bandwidth).toBeDefined();
-            expect(result.measurements.hfExtentHz).toBeLessThan(24000);
+            // Spectral rolloff is reported, never classified as band-limited:
+            // an energy percentile cannot prove where content ends.
+            expect(result.measurements.spectralRolloffHz).toBeLessThan(24000);
+            expect(result.findings).toEqual([]);
         }, 60_000);
     },
 );

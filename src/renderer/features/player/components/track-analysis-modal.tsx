@@ -120,8 +120,8 @@ function AnalysisDetails({ result }: { result: AnalysisResult }) {
                 }
             />
             <DetailRow
-                label={translate('player.analysis_label_hfExtent')}
-                value={formatKhz(measurements.hfExtentHz)}
+                label={translate('player.analysis_label_spectralRolloff')}
+                value={formatKhz(measurements.spectralRolloffHz)}
             />
             {result.findings.map((finding) => (
                 <FindingText finding={finding} key={finding.kind} />
@@ -172,23 +172,12 @@ function DetailRow({ label, value }: { label: string; value: null | string }) {
 function FindingText({ finding }: { finding: AnalysisFinding }) {
     const { t: translate } = useTranslation();
 
-    if (finding.kind === 'effective-resolution') {
-        return (
-            <Text c="dim" size="xs">
-                {translate('player.analysis_finding_effectiveResolution', {
-                    effective: finding.effectiveBitDepth,
-                    noiseFloor: finding.noiseFloorDbfs.toFixed(1),
-                    nominal: finding.nominalBitDepth,
-                })}
-            </Text>
-        );
-    }
-
     return (
         <Text c="dim" size="xs">
-            {translate('player.analysis_finding_bandwidthExtent', {
-                extent: (finding.hfExtentHz / 1000).toFixed(1),
-                nyquist: (finding.nominalNyquistHz / 1000).toFixed(1),
+            {translate('player.analysis_finding_effectiveResolution', {
+                effective: finding.effectiveBitDepth,
+                noiseFloor: finding.noiseFloorDbfs.toFixed(1),
+                nominal: finding.nominalBitDepth,
             })}
         </Text>
     );

@@ -34,7 +34,7 @@ export interface SourceDeclaration {
  * carrier / 8 (DSD64: 2822400 -> 352800 Hz). Servers may declare either rate,
  * depending on whether their metadata layer reports the carrier or the PCM.
  */
-export const DSD_PCM_RATE_FACTOR = 8;
+const DSD_PCM_RATE_FACTOR = 8;
 
 const DSD_CONTAINERS = new Set(['dff', 'dsf']);
 

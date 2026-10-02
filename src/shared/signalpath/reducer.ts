@@ -182,10 +182,7 @@ function dsdConversionDetail(
 ): string {
     const carrierRate = source.samplingRate;
     const pcmRate = decodedParams?.samplerate ?? null;
-    if (carrierRate !== null && pcmRate !== null) {
-        if (carrierRate === pcmRate) {
-            return `dsd2pcm: ${pcmRate} Hz PCM`;
-        }
+    if (carrierRate !== null && pcmRate !== null && carrierRate !== pcmRate) {
         return isDsdCarrierRate(carrierRate, pcmRate)
             ? `dsd2pcm: ${carrierRate} Hz carrier -> ${pcmRate} Hz PCM`
             : `dsd2pcm: ${carrierRate} Hz -> ${pcmRate} Hz PCM`;
@@ -194,7 +191,9 @@ function dsdConversionDetail(
         return `dsd2pcm: ${pcmRate} Hz PCM`;
     }
     if (carrierRate !== null) {
-        return `dsd2pcm: ${carrierRate} Hz carrier`;
+        // Without a decode rate the declared number cannot be identified as
+        // the carrier or its PCM quotient, so do not qualify it as either.
+        return `dsd2pcm: ${carrierRate} Hz`;
     }
     return 'dsd2pcm';
 }

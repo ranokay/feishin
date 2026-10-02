@@ -330,6 +330,17 @@ describe('buildSignalPathModel', () => {
         expect(dsd?.detail).toBe('dsd2pcm: 352800 Hz PCM');
     });
 
+    it('does not claim a carrier qualifier when the decode rate is unknown', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ decodedParams: null }),
+            source: { ...flacSource, codec: 'dsf', pcmOrDsd: 'dsd', samplingRate: 352800 },
+        });
+
+        const dsd = model.processing.find((entry) => entry.kind === 'declared-decode');
+        expect(dsd?.detail).toBe('dsd2pcm: 352800 Hz');
+    });
+
     it('labels the resampled output fallback alongside the DSD conversion', () => {
         const model = buildSignalPathModel({
             ...baseInputs,

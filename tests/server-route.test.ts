@@ -145,6 +145,50 @@ describe('evaluateServerRoute', () => {
         expect(result.detail).toBeNull();
     });
 
+    it('accepts the DSD rate pair in either direction', () => {
+        const result = evaluateServerRoute({
+            demuxer: { channels: 2, codec: 'dsd_lsbf_planar', samplerate: 2_822_400 },
+            source: { ...DSD_SOURCE, sampleRate: 352_800 },
+        });
+
+        expect(result.route).toBe('direct-stream');
+    });
+
+    it('matches DSD codec names case-insensitively', () => {
+        const result = evaluateServerRoute({
+            demuxer: { channels: 2, codec: 'DSD_LSBF_PLANAR', samplerate: 352_800 },
+            source: DSD_SOURCE,
+        });
+
+        expect(result.route).toBe('direct-stream');
+    });
+
+    it('accepts dff mime aliases for a dff container', () => {
+        const result = evaluateServerRoute({
+            headers: {
+                acceptRanges: 'bytes',
+                contentLength: DSD_SOURCE.sizeBytes,
+                contentType: 'audio/x-dff',
+            },
+            source: { ...DSD_SOURCE, container: 'dff' },
+        });
+
+        expect(result.route).toBe('direct-stream');
+    });
+
+    it('normalizes the container before the mime lookup', () => {
+        const result = evaluateServerRoute({
+            headers: {
+                acceptRanges: 'bytes',
+                contentLength: DSD_SOURCE.sizeBytes,
+                contentType: 'audio/dsf',
+            },
+            source: { ...DSD_SOURCE, container: 'x-dsf' },
+        });
+
+        expect(result.route).toBe('direct-stream');
+    });
+
     it('still flags a DSD stream whose rate is neither the carrier nor its x8 PCM rate', () => {
         const result = evaluateServerRoute({
             demuxer: { channels: 2, codec: 'dsd_lsbf_planar', samplerate: 44_100 },

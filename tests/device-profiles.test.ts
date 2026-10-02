@@ -259,6 +259,18 @@ describe('resolveAutoDevicePolicy', () => {
             name: 'an external USB codec whose vendor name is also a built-in one',
         },
         {
+            description: 'Topping E30 DAC',
+            deviceId: 'wasapi/{guid}',
+            expected: { level: 'inferred', policy: 'exclusive', reason: 'external-device' },
+            name: 'a DAC named only by its label',
+        },
+        {
+            description: 'Speakers (High Definition Audio)',
+            deviceId: 'wasapi/{0.0.0.00000000}.{dac4e1b2-0000-0000-0000-000000000000}',
+            expected: { level: 'unknown', policy: 'standard', reason: 'unknown-device' },
+            name: 'an opaque GUID endpoint that merely contains the letters dac',
+        },
+        {
             description: 'AirPods Pro',
             deviceId: 'coreaudio/AirPods Pro',
             expected: { level: 'inferred', policy: 'standard', reason: 'wireless-device' },

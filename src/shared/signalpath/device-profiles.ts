@@ -115,7 +115,12 @@ const BUILT_IN_DEVICE_PATTERNS = [
     'realtek',
 ];
 
-const EXTERNAL_DEVICE_PATTERNS = ['audio interface', 'dac', 'usb'];
+const EXTERNAL_DEVICE_PATTERNS = ['audio interface', 'usb'];
+
+// 'dac' is all hex digits, and WASAPI device ids are opaque hex GUIDs, so a
+// random endpoint id can contain it by chance. It only counts as a full label
+// token instead of a substring of the id.
+const EXTERNAL_LABEL_PATTERNS = ['dac'];
 
 /**
  * Conservative device-class heuristic behind the Auto ("Best Quality")
@@ -128,10 +133,11 @@ const EXTERNAL_DEVICE_PATTERNS = ['audio interface', 'dac', 'usb'];
  *    aggregate, virtual) - standard. Exclusions win over a positive match, so a
  *    virtual device named "USB ..." stays standard.
  * 2. Wireless/streaming endpoints (Bluetooth, AirPlay, AirPods, Wi-Fi) - standard.
- * 3. External audio (USB, DAC, "audio interface") - exclusive. Nothing else
- *    proves external: an ALSA `hw:` id can be either a USB DAC or the built-in
- *    codec (e.g. `alsa/hw:CARD=PCH,DEV=0` is a laptop's HDA Intel), so plain
- *    hardware ids stay unrecognized rather than guessing.
+ * 3. External audio (USB or "audio interface" tokens in the id or description,
+ *    "dac" only as a label token) - exclusive. Nothing else proves external: an
+ *    ALSA `hw:` id can be either a USB DAC or the built-in codec (e.g.
+ *    `alsa/hw:CARD=PCH,DEV=0` is a laptop's HDA Intel), and a WASAPI GUID can
+ *    contain "dac" by chance, so both stay unrecognized rather than guessing.
  * 4. Built-in host audio (AppleHDA, BuiltIn, MacBook/iMac, internal, Realtek,
  *    the built-in speaker id) - standard.
  * 5. No match, or no explicit device selected (mpv `auto`) - standard.
@@ -149,14 +155,18 @@ export function resolveAutoDevicePolicy(
         return { level: 'unknown', policy: 'standard', reason: 'no-device' };
     }
 
-    const facts = `${deviceId ?? ''} ${description ?? ''}`.toLowerCase();
+    const label = (description ?? '').toLowerCase();
+    const facts = `${deviceId ?? ''} ${label}`;
     if (matchesDevicePattern(facts, VIRTUAL_DEVICE_PATTERNS)) {
         return { level: 'inferred', policy: 'standard', reason: 'virtual-device' };
     }
     if (matchesDevicePattern(facts, WIRELESS_DEVICE_PATTERNS)) {
         return { level: 'inferred', policy: 'standard', reason: 'wireless-device' };
     }
-    if (matchesDevicePattern(facts, EXTERNAL_DEVICE_PATTERNS)) {
+    if (
+        matchesDevicePattern(facts, EXTERNAL_DEVICE_PATTERNS) ||
+        matchesDevicePattern(label, EXTERNAL_LABEL_PATTERNS)
+    ) {
         return { level: 'inferred', policy: 'exclusive', reason: 'external-device' };
     }
     if (matchesDevicePattern(facts, BUILT_IN_DEVICE_PATTERNS)) {

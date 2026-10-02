@@ -1,0 +1,21 @@
+{
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+        {
+            "codec_name": "flac",
+            "codec_type": "audio",
+            "sample_fmt": "s32",
+            "sample_rate": "96000",
+            "channels": 2,
+            "bits_per_sample": 0,
+            "bits_per_raw_sample": "24"
+        }
+    ],
+    "format": {
+        "format_name": "flac",
+        "duration": "123.456000",
+        "size": "12950000",
+        "bit_rate": "839000"
+    }
+}

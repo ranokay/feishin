@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 
 import { api } from '/@/renderer/api';
 import { TranscodingConfig } from '/@/renderer/store';
-import { QueueSong } from '/@/shared/types/domain-types';
+import { QueueSong, Song } from '/@/shared/types/domain-types';
 
 export function useSongUrl(
     song: QueueSong | undefined,
@@ -66,7 +66,7 @@ export function useSongUrl(
 }
 
 export const getSongUrl = async (
-    song: QueueSong,
+    song: Song,
     transcode: Partial<TranscodingConfig>,
     skipAutoTranscode?: boolean,
     forRenderer?: boolean,

@@ -1,3 +1,4 @@
+import './analysis';
 import './autodiscover';
 import './dlna';
 import './custom-themes';

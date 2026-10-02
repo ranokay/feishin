@@ -1,5 +1,6 @@
 import { contextBridge, webUtils } from 'electron';
 
+import { analysis } from './analysis';
 import { audioState } from './audio-state';
 import { autodiscover } from './autodiscover';
 import { browser } from './browser';
@@ -17,6 +18,7 @@ import { visualizer } from './visualizer';
 
 // Custom APIs for renderer
 const api = {
+    analysis,
     audioState,
     autodiscover,
     browser,

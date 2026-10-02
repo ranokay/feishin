@@ -97,7 +97,13 @@ export function useAnalysisJob(songs: Song[]): AnalysisJobResult {
                 return;
             }
 
-            const resolvedAvailability = await api.check();
+            let resolvedAvailability: AnalysisAvailability;
+            try {
+                resolvedAvailability = await api.check();
+            } catch (error) {
+                logger.warn('Analysis availability check failed', { error });
+                resolvedAvailability = { available: false, reason: 'missing-ffmpeg' };
+            }
             if (disposed) {
                 return;
             }

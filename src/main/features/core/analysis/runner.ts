@@ -46,7 +46,14 @@ export async function runTrackAnalysis(
             buildFfprobeAnalysisArgs(sourcePath),
             signal,
         );
+        if (signal.aborted) {
+            return { status: 'cancelled' };
+        }
         if (probe.code !== 0) {
+            log.warn('analysis ffprobe failed', {
+                code: probe.code,
+                stderr: probe.stderr.slice(-2000),
+            });
             return {
                 message: `ffprobe exited with code ${probe.code ?? 'signal'}`,
                 status: 'error',
@@ -62,7 +69,14 @@ export async function runTrackAnalysis(
             buildFfmpegAnalysisArgs(sourcePath),
             signal,
         );
+        if (signal.aborted) {
+            return { status: 'cancelled' };
+        }
         if (stats.code !== 0) {
+            log.warn('analysis ffmpeg failed', {
+                code: stats.code,
+                stderr: stats.stderr.slice(-2000),
+            });
             return {
                 message: `ffmpeg exited with code ${stats.code ?? 'signal'}`,
                 status: 'error',
@@ -114,5 +128,6 @@ async function downloadToFile(url: string, filePath: string, signal: AbortSignal
     await pipeline(
         Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
         createWriteStream(filePath),
+        { signal },
     );
 }

@@ -24,20 +24,26 @@ ipcMain.handle(
         if (!request || !isHttpUrl(request.url)) {
             return { message: 'invalid analysis request', status: 'error' };
         }
-        // One analysis at a time: the panel runs a queue and cancels explicitly.
+        // One analysis at a time: claim the run before awaiting anything so
+        // two concurrent invokes cannot both pass this check.
         if (activeRun) {
             return { status: 'busy' };
         }
-
-        const availability = await resolveFfmpegBinaries();
-        if (!availability.available) {
-            return { reason: availability.reason, status: 'unavailable' };
-        }
-
         const controller = new AbortController();
         activeRun = controller;
+        const label = typeof request.label === 'string' ? request.label.slice(0, 200) : undefined;
+
         try {
-            return await runTrackAnalysis(request, availability, controller.signal);
+            const availability = await resolveFfmpegBinaries();
+            if (!availability.available) {
+                return { reason: availability.reason, status: 'unavailable' };
+            }
+
+            return await runTrackAnalysis(
+                { label, url: request.url },
+                availability,
+                controller.signal,
+            );
         } finally {
             activeRun = null;
         }

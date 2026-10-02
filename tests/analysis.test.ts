@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import { probeBinary } from '../src/main/features/core/analysis/binaries';
 import {
     analysisCacheKey,
     deriveAnalysisResult,
@@ -24,6 +25,12 @@ const source16 = {
     durationSec: 2,
     sampleRate: 44100,
 };
+
+describe('probeBinary', () => {
+    it('reports a missing binary instead of rejecting', async () => {
+        await expect(probeBinary('/nonexistent/feishin-test-ffmpeg')).resolves.toBe(false);
+    });
+});
 
 describe('parseFfprobeJson', () => {
     it('reads stream and format facts from a flac probe', () => {

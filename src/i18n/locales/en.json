@@ -775,6 +775,7 @@
         "analysis_unavailableFfmpeg": "ffmpeg was not found. Install ffmpeg (for example, brew install ffmpeg) and make sure it is on your PATH, then reopen this panel.",
         "analysis_unavailableFfprobe": "ffprobe was not found. It ships with ffmpeg; install ffmpeg and reopen this panel.",
         "analysis_noTracks": "This album has no tracks to analyze",
+        "analysis_partialAlbumLoad": "Some albums could not be loaded; analyzing the rest",
         "analysis_errorBusy": "Another analysis is already running",
         "analysis_status_pending": "Queued",
         "analysis_status_running": "Analyzing",

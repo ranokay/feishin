@@ -27,6 +27,8 @@ export const AnalyzeAction = ({ albums, disabled, songs }: AnalyzeActionProps) =
     const server = useCurrentServer();
     const [loading, setLoading] = useState(false);
 
+    const hasTargets = (albums?.length ?? 0) > 0 || (songs?.length ?? 0) > 0;
+
     const onSelect = useCallback(async () => {
         if (songs && songs.length > 0) {
             openTrackAnalysis(songs);
@@ -38,17 +40,25 @@ export const AnalyzeAction = ({ albums, disabled, songs }: AnalyzeActionProps) =
 
         setLoading(true);
         try {
-            const details = await Promise.all(
+            const results = await Promise.allSettled(
                 albums.map((album) =>
                     queryClient.ensureQueryData(
-                        albumQueries.detail({ query: { id: album.id }, serverId: server.id }),
+                        albumQueries.detail({
+                            query: { id: album.id },
+                            serverId: album._serverId ?? server.id,
+                        }),
                     ),
                 ),
             );
-            const albumSongs = details.flatMap((detail) => detail?.songs ?? []);
+            const albumSongs = results.flatMap((result) =>
+                result.status === 'fulfilled' ? (result.value?.songs ?? []) : [],
+            );
             if (albumSongs.length === 0) {
                 toast.warn({ message: t('player.analysis_noTracks') });
                 return;
+            }
+            if (results.some((result) => result.status === 'rejected')) {
+                toast.warn({ message: t('player.analysis_partialAlbumLoad') });
             }
             openTrackAnalysis(albumSongs);
         } catch (error) {
@@ -66,7 +76,11 @@ export const AnalyzeAction = ({ albums, disabled, songs }: AnalyzeActionProps) =
     }
 
     return (
-        <ContextMenu.Item disabled={disabled || loading} leftIcon="audioLines" onSelect={onSelect}>
+        <ContextMenu.Item
+            disabled={disabled || loading || !hasTargets}
+            leftIcon="audioLines"
+            onSelect={onSelect}
+        >
             {t('page.contextMenu.analyze')}
         </ContextMenu.Item>
     );

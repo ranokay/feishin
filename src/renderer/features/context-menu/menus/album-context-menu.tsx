@@ -44,7 +44,7 @@ export const AlbumContextMenu = ({ items, type }: AlbumContextMenuProps) => {
             <GoToAction items={items} />
             <ContextMenu.Divider />
             <EditMetadataAction albumIds={ids} />
-            <AnalyzeAction albums={items} />
+            <AnalyzeAction albums={items} disabled={items.length === 0} />
             <GetInfoAction disabled={items.length === 0} items={items} />
         </ContextMenu.Content>
     );

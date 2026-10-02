@@ -46,7 +46,7 @@ export const SongContextMenu = ({ items, type }: SongContextMenuProps) => {
             <ShowInFileExplorerAction items={items} />
             <ContextMenu.Divider />
             <EditMetadataAction songs={items} />
-            <AnalyzeAction songs={items} />
+            <AnalyzeAction disabled={items.length === 0} songs={items} />
             <GetInfoAction disabled={items.length === 0} items={items} />
         </ContextMenu.Content>
     );

@@ -109,7 +109,7 @@ describe('Bit-Perfect runtime property pins', () => {
             property: 'af',
         });
         expect(findStrictPropertyViolation(filterPin, [{ label: 'unknown' }])).toEqual({
-            actual: '[{"label":"unknown"}]',
+            actual: '{"label":"unknown"}',
             expected: 'none',
             property: 'af',
         });

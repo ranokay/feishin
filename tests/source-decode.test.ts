@@ -4,6 +4,7 @@ import {
     classifySourceDecodeFilter,
     declaresDeEmphasis,
     DEFAULT_SOURCE_DECODE_OPTIONS,
+    describeAfEntry,
     isSourceDecodeActive,
     normalizeSourceDecodeOptions,
     sourceDecodeFilterEntries,
@@ -80,6 +81,22 @@ describe('classifySourceDecodeFilter', () => {
         expect(classifySourceDecodeFilter('lavfi:equalizer=f=1000:t=q:w=1:g=6')).toBeNull();
         expect(classifySourceDecodeFilter('volume')).toBeNull();
         expect(classifySourceDecodeFilter('')).toBeNull();
+    });
+});
+
+describe('describeAfEntry', () => {
+    it('keeps the lavfi graph identity in the name', () => {
+        expect(describeAfEntry({ enabled: true, name: 'lavfi', params: { graph: 'hdcd' } })).toBe(
+            'lavfi:hdcd',
+        );
+        expect(describeAfEntry({ name: 'volume' })).toBe('volume');
+        expect(describeAfEntry('volume')).toBe('volume');
+    });
+
+    it('never turns an unrecognized entry into an empty name', () => {
+        expect(describeAfEntry({})).not.toBe('');
+        expect(describeAfEntry({ label: 'unknown' })).not.toBe('');
+        expect(describeAfEntry(42)).toBe('42');
     });
 });
 

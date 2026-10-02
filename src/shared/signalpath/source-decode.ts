@@ -82,7 +82,12 @@ export function describeAfEntry(filter: unknown): string {
     if (graph.length > 0) {
         return name.length > 0 ? `${name}:${graph}` : graph;
     }
-    return name;
+    if (name.length > 0) {
+        return name;
+    }
+    // An unrecognized shape must still count as a live entry; dropping it would
+    // let a non-empty chain read as clean.
+    return JSON.stringify(filter) ?? '';
 }
 
 export function isSourceDecodeActive(options: SourceDecodeOptions): boolean {

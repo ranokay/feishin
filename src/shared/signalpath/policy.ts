@@ -1,6 +1,9 @@
 import { BIT_PERFECT_PROPERTY_PINS, strictPropertyRecord } from './strict-properties';
 
 export const PLAYBACK_POLICIES = ['standard', 'exclusive', 'bit-perfect'] as const;
+// 'auto' ("Best Quality") is a selection, not an enforceable policy: it resolves
+// to a concrete policy per device before any behavioral gate reads it.
+export const PLAYBACK_POLICY_SELECTIONS = [...PLAYBACK_POLICIES, 'auto'] as const;
 export const BIT_PERFECT_MUTE_BEHAVIORS = ['pause', 'gain-mute'] as const;
 export const BIT_PERFECT_EFFECTIVE_VOLUME = 100;
 
@@ -18,6 +21,7 @@ export type PlaybackControlAction =
 export type PlaybackControlStatus = 'paused' | 'playing' | 'stopped';
 export type PlaybackPolicy = (typeof PLAYBACK_POLICIES)[number];
 export type PlaybackPolicyPlayerType = 'dlna' | 'jukebox' | 'local' | 'web';
+export type PlaybackPolicySelection = (typeof PLAYBACK_POLICY_SELECTIONS)[number];
 
 export function isBitPerfectPlaybackActive(
     policy: PlaybackPolicy,
@@ -35,6 +39,12 @@ export function normalizeBitPerfectMuteBehavior(value: unknown): BitPerfectMuteB
 export function normalizePlaybackPolicy(value: unknown): PlaybackPolicy {
     return PLAYBACK_POLICIES.includes(value as PlaybackPolicy)
         ? (value as PlaybackPolicy)
+        : 'standard';
+}
+
+export function normalizePlaybackPolicySelection(value: unknown): PlaybackPolicySelection {
+    return PLAYBACK_POLICY_SELECTIONS.includes(value as PlaybackPolicySelection)
+        ? (value as PlaybackPolicySelection)
         : 'standard';
 }
 

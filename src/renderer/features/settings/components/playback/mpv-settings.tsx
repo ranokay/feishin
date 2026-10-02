@@ -1,6 +1,6 @@
 import type {
     BitPerfectMuteBehavior,
-    PlaybackPolicy,
+    PlaybackPolicySelection,
     SourceDecodeOptions,
 } from '/@/shared/signalpath';
 
@@ -403,15 +403,24 @@ export const MpvSettings = memo(() => {
                             label: t('setting.playbackPolicy', { context: 'optionBitPerfect' }),
                             value: 'bit-perfect',
                         },
+                        {
+                            label: t('setting.playbackPolicy', { context: 'optionAuto' }),
+                            value: 'auto',
+                        },
                     ]}
                     defaultValue={settings.playbackPolicy}
                     onChange={(e) =>
-                        setSettings({ playback: { playbackPolicy: e as PlaybackPolicy } })
+                        setSettings({
+                            playback: { playbackPolicy: e as PlaybackPolicySelection },
+                        })
                     }
                 />
             ),
             description: t('setting.playbackPolicy', { context: 'description' }),
-            note: t('setting.playbackPolicy', { context: 'enforcementNote' }),
+            note:
+                settings.playbackPolicy === 'auto'
+                    ? t('setting.playbackPolicy', { context: 'autoNote' })
+                    : t('setting.playbackPolicy', { context: 'enforcementNote' }),
             title: t('setting.playbackPolicy'),
         },
         {

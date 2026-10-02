@@ -14,6 +14,7 @@ import { useCurrentServer, useMpvInitialized, usePlayerStatus } from '/@/rendere
 import {
     usePlaybackSettings,
     usePlaybackType,
+    useSettingsStore,
     useSettingsStoreActions,
 } from '/@/renderer/store/settings.store';
 import { logger } from '/@/renderer/utils/logger';
@@ -23,7 +24,11 @@ import { Group } from '/@/shared/components/group/group';
 import { Select } from '/@/shared/components/select/select';
 import { Switch } from '/@/shared/components/switch/switch';
 import { toast } from '/@/shared/components/toast/toast';
-import { normalizePlaybackPolicy, resolveDeviceProfile } from '/@/shared/signalpath';
+import {
+    normalizePlaybackPolicy,
+    resolveDeviceProfile,
+    resolveLiveDeviceDescription,
+} from '/@/shared/signalpath';
 import { ServerFeature } from '/@/shared/types/features-types';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
@@ -49,6 +54,27 @@ export const getMpvAudioDevices = async () => {
 };
 
 export type AudioDeviceOption = { description?: string; label: string; value: string };
+
+/**
+ * mpv device ids are not stable and descriptions were not always persisted.
+ * Feed a live description back into settings when a device list is enumerated,
+ * so Auto classification and the profile description fallback are not stuck on
+ * an empty legacy value. A missing or blank live entry leaves the stored value
+ * untouched.
+ */
+const persistSelectedDeviceDescription = (devices: AudioDeviceOption[]) => {
+    const state = useSettingsStore.getState();
+    const description = resolveLiveDeviceDescription(
+        devices,
+        state.playback.mpvAudioDeviceId,
+        state.playback.mpvAudioDeviceDescription,
+    );
+    if (description) {
+        state.actions.setSettings({
+            playback: { mpvAudioDeviceDescription: description },
+        });
+    }
+};
 
 export const getDefaultAudioDevice = (
     devices: AudioDeviceOption[],
@@ -134,6 +160,7 @@ export const useAudioDevices = (playbackType: PlayerType) => {
                         (d, index, self) => index === self.findIndex((t) => t.value === d.value),
                     );
                     setAudioDevices(uniqueDevices);
+                    persistSelectedDeviceDescription(uniqueDevices);
                 } catch {
                     toast.error({
                         message: t('error.audioDeviceFetchError'),

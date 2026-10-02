@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { FixtureSpec } from '../fixtures/audio-fixtures';
 
 import { runProcess } from '../../src/main/features/core/analysis/process';
-import { type Platform, policyStartupConfig } from '../../src/shared/signalpath';
+import { policyStartupConfig } from '../../src/shared/signalpath';
 import { writeFlacFixture, writeWavFixture } from '../fixtures/audio-fixtures';
 import { MpvTestProcess } from './mpv-test-process';
 
@@ -23,8 +23,8 @@ export interface PcmComparison {
  * Every depth/rate combination a strict chain must decode without alteration.
  * FLAC stops at 24-bit because 32-bit FLAC is not a streamable subset.
  */
-export const BIT_TRANSPARENCY_DEPTHS = [16, 24, 32] as const;
-export const BIT_TRANSPARENCY_RATES = [44100, 48000, 96000, 192000] as const;
+const BIT_TRANSPARENCY_DEPTHS = [16, 24, 32] as const;
+const BIT_TRANSPARENCY_RATES = [44100, 48000, 96000, 192000] as const;
 
 export interface BitTransparencyCellResult {
     detail?: string;
@@ -270,9 +270,13 @@ async function renderFixture(options: {
     mpvBinary: string;
     renderedPath: string;
 }): Promise<void> {
-    // Mirror the bit-perfect startup config, but swap the hardware AO pin for
-    // the software PCM sink so no audio device or exclusive mode is required.
-    const { runtimeProperties, startupArgs } = policyStartupConfig('bit-perfect', testPlatform());
+    // Mirror the bit-perfect startup config, but replace the platform's
+    // hardware AO pin with the software PCM sink. The platform argument only
+    // selects that discarded pin, so a fixed one keeps the mirror
+    // platform-independent. Both sides of the comparison are raw s32le: the
+    // reference decodes to it with ffmpeg, the render forces it with
+    // --audio-format, and integer widening to 32-bit is precision-preserving.
+    const { runtimeProperties, startupArgs } = policyStartupConfig('bit-perfect', 'linux');
     const args = [
         ...startupArgs.filter((arg) => !arg.startsWith('--ao=')),
         '--ao=pcm',
@@ -301,10 +305,4 @@ async function renderFixture(options: {
     } finally {
         await mpv.dispose();
     }
-}
-
-function testPlatform(): Platform {
-    return process.platform === 'darwin' || process.platform === 'win32'
-        ? process.platform
-        : 'linux';
 }

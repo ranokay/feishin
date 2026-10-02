@@ -23,7 +23,6 @@ const source16 = {
     container: 'flac',
     durationSec: 2,
     sampleRate: 44100,
-    sizeBytes: 40739,
 };
 
 describe('parseFfprobeJson', () => {
@@ -39,7 +38,6 @@ describe('parseFfprobeJson', () => {
             container: 'flac',
             durationSec: 123.456,
             sampleRate: 96000,
-            sizeBytes: 12950000,
         });
     });
 
@@ -104,16 +102,8 @@ describe('rolloff samples', () => {
             ].join('\n'),
         );
         expect(values).toEqual([1000, 2000, 3000]);
-        expect(summarizeRolloff(values)).toEqual({
-            frameCount: 3,
-            medianHz: 2000,
-            p90Hz: 3000,
-        });
-        expect(summarizeRolloff([])).toEqual({
-            frameCount: 0,
-            medianHz: null,
-            p90Hz: null,
-        });
+        expect(summarizeRolloff(values)).toBe(2000);
+        expect(summarizeRolloff([])).toBeNull();
     });
 });
 
@@ -139,7 +129,7 @@ describe('deriveAnalysisResult', () => {
             analyzedAt: '2026-10-02T00:00:00.000Z',
             astats: sineAstats,
             ebur128: sineEbur,
-            rolloff: sineRolloff,
+            rolloffHz: sineRolloff,
             source: source16,
         });
 
@@ -150,7 +140,6 @@ describe('deriveAnalysisResult', () => {
             dcOffset: 0,
             effectiveBitDepth: null,
             hfExtentHz: 1012.06,
-            hfExtentP90Hz: 1012.06,
             loudnessLufs: -21.1,
             loudnessRangeLu: 0,
             noiseFloorDbfs: -18.063656,
@@ -167,7 +156,7 @@ describe('deriveAnalysisResult', () => {
             analyzedAt: '2026-10-02T00:00:00.000Z',
             astats: { dcOffset: 0, noiseFloorDb: -97, peakLevelDb: -1, rmsLevelDb: -20 },
             ebur128: null,
-            rolloff: { frameCount: 10, medianHz: 18700, p90Hz: 19078 },
+            rolloffHz: 18700,
             source: { ...source16, bitDepth: 24, sampleRate: 96000 },
         });
 
@@ -187,7 +176,7 @@ describe('deriveAnalysisResult', () => {
             analyzedAt: '2026-10-02T00:00:00.000Z',
             astats: sineAstats,
             ebur128: sineEbur,
-            rolloff: sineRolloff,
+            rolloffHz: sineRolloff,
             source: source16,
         });
 
@@ -210,6 +199,9 @@ describe('analysisCacheKey', () => {
     it('changes when the file size or modified date changes', () => {
         expect(analysisCacheKey({ ...base, size: 1001 })).not.toBe(analysisCacheKey(base));
         expect(analysisCacheKey({ ...base, updatedAt: '2026-02-02T00:00:00Z' })).not.toBe(
+            analysisCacheKey(base),
+        );
+        expect(analysisCacheKey({ ...base, createdAt: '2026-03-03T00:00:00Z' })).not.toBe(
             analysisCacheKey(base),
         );
     });

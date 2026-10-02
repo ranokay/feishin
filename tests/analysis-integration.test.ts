@@ -92,7 +92,7 @@ describe.skipIf(!ffmpegAvailable || !ffprobeAvailable)(
                 analyzedAt: '2026-10-02T00:00:00.000Z',
                 astats: parseAstatsOverall(stats.stderr),
                 ebur128: parseEbur128Summary(stats.stderr),
-                rolloff: summarizeRolloff(parseRolloffValues(stats.stdout)),
+                rolloffHz: summarizeRolloff(parseRolloffValues(stats.stdout)),
                 source: source!,
             });
         };

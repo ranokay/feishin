@@ -160,13 +160,21 @@ export const SignalPathBadge = () => {
                 channels: song?.channels ?? null,
                 container: song?.container ?? null,
                 sampleRate: song?.sampleRate ?? null,
+                tags: song?.tags ?? null,
             }),
-        [song?.bitDepth, song?.channels, song?.container, song?.sampleRate],
+        [song?.bitDepth, song?.channels, song?.container, song?.sampleRate, song?.tags],
     );
 
     const model = useMemo(
-        () => buildSignalPathModel({ policy, replayGainMode, snapshot, source }),
-        [policy, replayGainMode, snapshot, source],
+        () =>
+            buildSignalPathModel({
+                policy,
+                replayGainMode,
+                snapshot,
+                source,
+                sourceDecode: playbackSettings.sourceDecode,
+            }),
+        [policy, playbackSettings.sourceDecode, replayGainMode, snapshot, source],
     );
 
     // Only the local mpv engine has a signal path to describe, and a stopped

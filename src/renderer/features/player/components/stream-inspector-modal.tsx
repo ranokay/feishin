@@ -86,6 +86,7 @@ function Section({
 export const StreamInspectorModal = () => {
     const { t } = useTranslation();
     const playbackType = useSettingsStore((state) => state.playback.type);
+    const sourceDecode = useSettingsStore((state) => state.playback.sourceDecode);
     const policy = useEffectivePlaybackPolicy();
     const replayGainMode = useSettingsStore((state) => state.playback.mpvProperties.replayGainMode);
     const song = usePlayerSong();
@@ -128,13 +129,14 @@ export const StreamInspectorModal = () => {
                 channels: song?.channels ?? null,
                 container: song?.container ?? null,
                 sampleRate: song?.sampleRate ?? null,
+                tags: song?.tags ?? null,
             }),
-        [song?.bitDepth, song?.channels, song?.container, song?.sampleRate],
+        [song?.bitDepth, song?.channels, song?.container, song?.sampleRate, song?.tags],
     );
 
     const model = useMemo(
-        () => buildSignalPathModel({ policy, replayGainMode, snapshot, source }),
-        [policy, replayGainMode, snapshot, source],
+        () => buildSignalPathModel({ policy, replayGainMode, snapshot, source, sourceDecode }),
+        [policy, replayGainMode, snapshot, source, sourceDecode],
     );
 
     const report = useMemo(

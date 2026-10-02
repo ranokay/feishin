@@ -15,6 +15,7 @@ const source: SourceDeclaration = {
     bitDepth: 16,
     channelCount: 2,
     codec: 'flac',
+    deEmphasisDeclared: false,
     lossless: true,
     pcmOrDsd: 'pcm',
     samplingRate: 44100,

@@ -1,4 +1,8 @@
-import type { BitPerfectMuteBehavior, PlaybackPolicy } from '/@/shared/signalpath';
+import type {
+    BitPerfectMuteBehavior,
+    PlaybackPolicy,
+    SourceDecodeOptions,
+} from '/@/shared/signalpath';
 
 import isElectron from 'is-electron';
 import { memo, useEffect, useState } from 'react';
@@ -101,6 +105,14 @@ export const MpvSettings = memo(() => {
         setSettings({
             playback: {
                 mpvExtraParameters: data,
+            },
+        });
+    };
+
+    const handleSetSourceDecode = (key: keyof SourceDecodeOptions, value: boolean) => {
+        setSettings({
+            playback: {
+                sourceDecode: { ...settings.sourceDecode, [key]: value },
             },
         });
     };
@@ -347,6 +359,33 @@ export const MpvSettings = memo(() => {
         },
     ];
 
+    const sourceDecodeOptions: SettingOption[] = [
+        {
+            control: (
+                <Switch
+                    defaultChecked={settings.sourceDecode.hdcd}
+                    onChange={(e) => handleSetSourceDecode('hdcd', e.currentTarget.checked)}
+                />
+            ),
+            description: t('setting.sourceDecodeHdcd', { context: 'description' }),
+            isHidden: settings.type !== PlayerType.LOCAL,
+            note: isBitPerfect ? t('setting.sourceDecodeBitPerfectNote') : undefined,
+            title: t('setting.sourceDecodeHdcd'),
+        },
+        {
+            control: (
+                <Switch
+                    defaultChecked={settings.sourceDecode.deEmphasis}
+                    onChange={(e) => handleSetSourceDecode('deEmphasis', e.currentTarget.checked)}
+                />
+            ),
+            description: t('setting.sourceDecodeDeEmphasis', { context: 'description' }),
+            isHidden: settings.type !== PlayerType.LOCAL,
+            note: isBitPerfect ? t('setting.sourceDecodeBitPerfectNote') : undefined,
+            title: t('setting.sourceDecodeDeEmphasis'),
+        },
+    ];
+
     const policyOptions: SettingOption[] = [
         {
             control: (
@@ -415,6 +454,7 @@ export const MpvSettings = memo(() => {
             <SettingsSection options={options} />
             <SettingsSection options={generalOptions} />
             <SettingsSection options={replayGainOptions} />
+            <SettingsSection options={sourceDecodeOptions} />
         </>
     );
 });

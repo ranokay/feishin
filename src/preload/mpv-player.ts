@@ -1,4 +1,4 @@
-import type { MpvLoadSource, PlaybackPolicy } from '/@/shared/signalpath';
+import type { MpvLoadSource, PlaybackPolicy, SourceDecodeOptions } from '/@/shared/signalpath';
 
 import { ipcRenderer } from 'electron';
 
@@ -8,6 +8,7 @@ const initialize = (data: {
     extraParameters?: string[];
     playbackPolicy?: PlaybackPolicy;
     properties?: Record<string, any>;
+    sourceDecode?: SourceDecodeOptions;
 }) => {
     return ipcRenderer.invoke('player-initialize', data);
 };
@@ -17,6 +18,7 @@ const restart = (data: {
     extraParameters?: string[];
     playbackPolicy?: PlaybackPolicy;
     properties?: Record<string, any>;
+    sourceDecode?: SourceDecodeOptions;
 }) => {
     return ipcRenderer.invoke('player-restart', data);
 };

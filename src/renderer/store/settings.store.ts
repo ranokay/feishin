@@ -30,10 +30,12 @@ import { randomString } from '/@/renderer/utils';
 import { sanitizeCss } from '/@/renderer/utils/sanitize';
 import {
     BIT_PERFECT_MUTE_BEHAVIORS,
+    DEFAULT_SOURCE_DECODE_OPTIONS,
     type DeviceProfile,
     normalizeBitPerfectMuteBehavior,
     normalizeDeviceProfiles,
     normalizePlaybackPolicy,
+    normalizeSourceDecodeOptions,
     PLAYBACK_POLICIES,
     resolveEffectivePlaybackPolicy,
 } from '/@/shared/signalpath';
@@ -720,6 +722,11 @@ const DeviceProfileSchema = z.object({
     policyOverride: z.enum([...PLAYBACK_POLICIES]),
 });
 
+const SourceDecodeSettingsSchema = z.object({
+    deEmphasis: z.boolean(),
+    hdcd: z.boolean(),
+});
+
 const PlaybackSettingsSchema = z.object({
     audioDeviceId: z.string().nullable().optional(),
     audioFadeOnStatusChange: z.boolean(),
@@ -738,6 +745,7 @@ const PlaybackSettingsSchema = z.object({
     previousLocalVolume: z.number().min(0).max(100).optional(),
     previousPlayerType: z.nativeEnum(PlayerType).optional(),
     scrobble: ScrobbleSettingsSchema,
+    sourceDecode: SourceDecodeSettingsSchema,
     transcode: TranscodingConfigSchema,
     type: z.nativeEnum(PlayerType),
     webAudio: z.boolean(),
@@ -2150,6 +2158,7 @@ const initialState: SettingsState = {
             scrobbleAtDuration: 240,
             scrobbleAtPercentage: 75,
         },
+        sourceDecode: { ...DEFAULT_SOURCE_DECODE_OPTIONS },
         transcode: {
             enabled: false,
         },
@@ -2992,10 +3001,18 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
+                if (version < 38) {
+                    if (state.playback) {
+                        state.playback.sourceDecode = normalizeSourceDecodeOptions(
+                            state.playback.sourceDecode,
+                        );
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 37,
+            version: 38,
         },
     ),
 );

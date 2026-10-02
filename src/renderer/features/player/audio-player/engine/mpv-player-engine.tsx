@@ -77,6 +77,7 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
     const mpvExtraParameters = useSettingsStore((store) => store.playback.mpvExtraParameters);
     const mpvProperties = useSettingsStore((store) => store.playback.mpvProperties);
     const playbackPolicy = useEffectivePlaybackPolicy();
+    const sourceDecode = useSettingsStore((store) => store.playback.sourceDecode);
     const [reloadTrigger, setReloadTrigger] = useState(0);
 
     useEffect(() => {
@@ -160,14 +161,20 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
                 extraParameters,
                 playbackPolicy,
                 properties,
+                sourceDecode,
             });
 
-            // Apply EQ and compressor filters after MPV has initialized
+            // Apply the source-decode + user DSP chain after MPV has initialized.
+            // Under Bit-Perfect only an explicitly opted source decode survives;
+            // EQ and compressor stay suppressed.
             const { compressor, equalizer } = useSettingsStore.getState().playback;
             const { buildMpvAudioFilters } =
                 await import('/@/renderer/features/settings/components/playback/mpv-audio-filters');
-            const filterStr = buildMpvAudioFilters(equalizer, compressor);
-            if (playbackPolicy !== 'bit-perfect' && filterStr) {
+            const filterStr = buildMpvAudioFilters(equalizer, compressor, {
+                includeUserDsp: playbackPolicy !== 'bit-perfect',
+                sourceDecode,
+            });
+            if (filterStr) {
                 mpvPlayer?.setProperties({ af: filterStr });
             }
 
@@ -250,8 +257,17 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
         // update callbacks in usePlayerEvents.
         // reloadTrigger is included to allow manual reload via MPV_RELOAD event.
         // playbackPolicy re-initializes mpv so policy-derived args take effect.
+        // sourceDecode re-initializes so the engine chain, the main-process
+        // strict pins, and the applied af agree on the same explicit opt-in.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mpvExtraParameters, mpvProperties, mpvAudioDeviceId, reloadTrigger, playbackPolicy]);
+    }, [
+        mpvExtraParameters,
+        mpvProperties,
+        mpvAudioDeviceId,
+        reloadTrigger,
+        playbackPolicy,
+        sourceDecode,
+    ]);
 
     // Update volume
     useEffect(() => {

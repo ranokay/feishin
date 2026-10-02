@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 export interface FixtureSpec {
+    /** Peak fraction of full scale; defaults to 0.5, the historical fixture level. */
+    amplitude?: number;
     bitDepth: 16 | 24 | 32;
     channels: number;
     durationSec: number;
@@ -60,6 +62,7 @@ export function generateWav(spec: FixtureSpec): Buffer {
 
     const frames: Buffer[] = [];
     let sampleCounter = 0;
+    const amplitude = spec.amplitude ?? 0.5;
     for (let frame = 0; frame < totalFrames; frame++) {
         for (let channel = 0; channel < spec.channels; channel++) {
             const value =
@@ -69,7 +72,7 @@ export function generateWav(spec: FixtureSpec): Buffer {
                               spec.sampleRate,
                       )
                     : 0;
-            frames.push(encodeSample(value, spec.bitDepth));
+            frames.push(encodeSample(value, spec.bitDepth, amplitude));
             sampleCounter++;
         }
     }
@@ -136,6 +139,18 @@ const DSF_BLOCK_SIZE = 4096;
 // 0x69 is the canonical DSD idle/silence byte pattern.
 const DSF_SILENCE_BYTE = 0x69;
 
+export interface HdcdFixtureSpec {
+    /**
+     * Peak fraction of full scale. Peak extend only changes samples at or above
+     * 0x5981 (~0.70), so the default deliberately overshoots that threshold.
+     */
+    amplitude?: number;
+    channels: number;
+    durationSec: number;
+    frequencyHz?: number;
+    sampleRate: number;
+}
+
 export function dsfFixtureFileName(spec: DsfFixtureSpec): string {
     return `dsd_${spec.carrierRate}_${spec.channels}ch_${spec.durationSec}s.dsf`;
 }
@@ -190,25 +205,121 @@ export async function writeDsfFixture(dir: string, spec: DsfFixtureSpec): Promis
     return filePath;
 }
 
-function encodeSample(value: number, bitDepth: 16 | 24 | 32): Buffer {
+/** 16-bit magnitude at/above which the hdcd filter maps samples through peaktab. */
+export const HDCD_PEAK_EXTEND_LEVEL = 0x5981;
+
+const HDCD_SYNC_A = 0x7e0fa005n;
+const HDCD_WINDOW_MASK = (1n << 32n) - 1n;
+
+/**
+ * Writes a 16-bit WAV carrying one valid HDCD format-A packet with peak
+ * extension enabled and 0 dB target gain. ffmpeg exposes no HDCD encoder, so
+ * the packet is synthesized from libavfilter's detector: the filter collects
+ * sample LSBs into a 32-bit window, applies `w ^ w>>5 ^ w>>23`, and looks for
+ * the sync pattern plus an 8-bit control word. Inverting that transform yields
+ * the exact LSB stream the detector accepts (verified against FFmpeg 9.0.2).
+ */
+export function generateHdcdWav(spec: HdcdFixtureSpec): Buffer {
+    const wav = generateWav({
+        amplitude: spec.amplitude ?? 0.92,
+        bitDepth: 16,
+        channels: spec.channels,
+        durationSec: spec.durationSec,
+        frequencyHz: spec.frequencyHz ?? 1000,
+        kind: 'sine',
+        sampleRate: spec.sampleRate,
+    });
+
+    const packetBits = hdcdPacketBits();
+    const totalFrames = Math.floor(spec.sampleRate * spec.durationSec);
+    for (let frame = 0; frame < totalFrames; frame++) {
+        const bit = packetBits[frame] ?? 0;
+        for (let channel = 0; channel < spec.channels; channel++) {
+            const offset = 44 + (frame * spec.channels + channel) * 2;
+            const value = wav.readInt16LE(offset);
+            wav.writeInt16LE((value & ~1) | bit, offset);
+        }
+    }
+    return wav;
+}
+
+export function hdcdFixtureFileName(spec: HdcdFixtureSpec): string {
+    const frequency = spec.frequencyHz ?? 1000;
+    return `hdcd_sine${frequency}_${spec.sampleRate}_${spec.channels}ch_${spec.durationSec}s.wav`;
+}
+
+export async function writeHdcdWavFixture(dir: string, spec: HdcdFixtureSpec): Promise<string> {
+    const filePath = path.join(dir, hdcdFixtureFileName(spec));
+    await writeFile(filePath, generateHdcdWav(spec));
+    return filePath;
+}
+
+function encodeSample(value: number, bitDepth: 16 | 24 | 32, amplitude = 0.5): Buffer {
     if (bitDepth === 16) {
-        const scaled = Math.round(value * 0.5 * 32767);
+        const scaled = Math.round(value * amplitude * 32767);
         const buf = Buffer.alloc(2);
         buf.writeInt16LE(Math.max(-32768, Math.min(32767, scaled)), 0);
         return buf;
     }
     if (bitDepth === 24) {
-        const clamped = Math.max(-8388608, Math.min(8388607, Math.round(value * 0.5 * 8388607)));
+        const clamped = Math.max(
+            -8388608,
+            Math.min(8388607, Math.round(value * amplitude * 8388607)),
+        );
         const buf = Buffer.alloc(3);
         buf[0] = clamped & 0xff;
         buf[1] = (clamped >> 8) & 0xff;
         buf[2] = (clamped >> 16) & 0xff;
         return buf;
     }
-    const scaled = Math.round(value * 0.5 * 2147483647);
+    const scaled = Math.round(value * amplitude * 2147483647);
     const buf = Buffer.alloc(4);
     buf.writeInt32LE(Math.max(-2147483648, Math.min(2147483647, scaled)), 0);
     return buf;
+}
+
+function hdcdPacketBits(): number[] {
+    const window = hdcdSyncWindow();
+    const code = hdcdPeakExtendCode(window);
+    const bits: number[] = [];
+    for (let bit = 31; bit >= 0; bit--) {
+        bits.push(Number((window >> BigInt(bit)) & 1n));
+    }
+    for (let bit = 7; bit >= 0; bit--) {
+        bits.push((code >> bit) & 1);
+    }
+    return bits;
+}
+
+/** 8 code bits that select control word 0x10: peak extend on, target gain 0 dB. */
+function hdcdPeakExtendCode(window: bigint): number {
+    for (let code = 0; code < 256; code++) {
+        const next = (window << 8n) | BigInt(code);
+        const transformed = (next ^ (next >> 5n) ^ (next >> 23n)) & HDCD_WINDOW_MASK;
+        if ((transformed & 0x0fa00500n) !== 0x0fa00500n) {
+            continue;
+        }
+        if ((transformed & 0xc8n) !== 0n) {
+            continue;
+        }
+        const control = Number((transformed & 0xffn) + (transformed & 0x7n));
+        if (control === 0x10) {
+            return code;
+        }
+    }
+    throw new Error('no HDCD control code produces peak-extend with 0 dB gain');
+}
+
+/** Invert the filter's `w ^ w>>5 ^ w>>23` transform for the A sync pattern. */
+function hdcdSyncWindow(): bigint {
+    let window = 0n;
+    for (let bit = 31; bit >= 0; bit--) {
+        const target = (HDCD_SYNC_A >> BigInt(bit)) & 1n;
+        const fromShift5 = bit + 5 < 32 ? (window >> BigInt(bit + 5)) & 1n : 0n;
+        const fromShift23 = bit + 23 < 32 ? (window >> BigInt(bit + 23)) & 1n : 0n;
+        window |= (target ^ fromShift5 ^ fromShift23) << BigInt(bit);
+    }
+    return window;
 }
 
 const STANDARD_WAV_MATRIX: FixtureSpec[] = [

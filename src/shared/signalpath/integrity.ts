@@ -2,7 +2,7 @@ import type { ConfidenceLevel } from './evidence';
 import type { DecodedParams, OutputParams, SourceDeclaration } from './formats';
 import type { StrictPropertyViolation } from './strict-properties';
 
-import { isPrecisionPreserving } from './formats';
+import { isDsdCarrierRate, isPrecisionPreserving } from './formats';
 
 // Drivers whose NAME alone proves an exclusive route. Bare 'wasapi'/'pipewire'
 // are excluded on purpose: mpv reports those names for ordinary shared playback
@@ -187,7 +187,19 @@ function detectResampling(observation: IntegrityObservation, detail: string[]): 
         detail.push(`rate change decoder -> output: ${decodedRate} -> ${outputRate}`);
         return decodedRate;
     }
-    if (declaredRate !== null && decodedRate !== null && declaredRate !== decodedRate) {
+    // A DSD carrier decodes to an x8 PCM rate; that is the declared
+    // conversion, not a resample.
+    const isDsdConversion =
+        sourceIsDsd(observation) &&
+        declaredRate !== null &&
+        decodedRate !== null &&
+        isDsdCarrierRate(declaredRate, decodedRate);
+    if (
+        declaredRate !== null &&
+        decodedRate !== null &&
+        declaredRate !== decodedRate &&
+        !isDsdConversion
+    ) {
         detail.push(`rate mismatch source -> decoder: ${declaredRate} -> ${decodedRate}`);
         return declaredRate;
     }

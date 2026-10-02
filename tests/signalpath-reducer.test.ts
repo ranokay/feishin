@@ -83,6 +83,10 @@ describe('declareSource', () => {
                 ?.pcmOrDsd,
         ).toBe('dsd');
         expect(
+            declareSource({ bitDepth: null, channels: 2, container: 'x-dsf', sampleRate: null })
+                ?.pcmOrDsd,
+        ).toBe('dsd');
+        expect(
             declareSource({ bitDepth: null, channels: null, container: null, sampleRate: null }),
         ).toBeNull();
     });
@@ -295,6 +299,54 @@ describe('buildSignalPathModel', () => {
         const dsd = model.processing.find((entry) => entry.kind === 'declared-decode');
         expect(dsd?.level).toBe('inferred');
         expect(['exclusive-processed', 'processed']).toContain(model.integrity.status);
+    });
+
+    it('labels the DSD conversion with the carrier and x8 PCM rates', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                decodedParams: { channels: 2, format: 'float', samplerate: 352800 },
+                outputParams: { channels: 2, format: 'float', samplerate: 352800 },
+            }),
+            source: { ...flacSource, codec: 'dsf', pcmOrDsd: 'dsd', samplingRate: 2822400 },
+        });
+
+        const dsd = model.processing.find((entry) => entry.kind === 'declared-decode');
+        expect(dsd?.detail).toBe('dsd2pcm: 2822400 Hz carrier -> 352800 Hz PCM');
+        expect(['exclusive-processed', 'processed']).toContain(model.integrity.status);
+    });
+
+    it('labels a DSD source declared at the x8 PCM rate without inventing a carrier', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                decodedParams: { channels: 2, format: 'float', samplerate: 352800 },
+                outputParams: { channels: 2, format: 'float', samplerate: 352800 },
+            }),
+            source: { ...flacSource, codec: 'dsf', pcmOrDsd: 'dsd', samplingRate: 352800 },
+        });
+
+        const dsd = model.processing.find((entry) => entry.kind === 'declared-decode');
+        expect(dsd?.detail).toBe('dsd2pcm: 352800 Hz PCM');
+    });
+
+    it('labels the resampled output fallback alongside the DSD conversion', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                decodedParams: { channels: 2, format: 'float', samplerate: 352800 },
+                outputParams: { channels: 2, format: 'float', samplerate: 192000 },
+            }),
+            source: { ...flacSource, codec: 'dsf', pcmOrDsd: 'dsd', samplingRate: 2822400 },
+        });
+
+        expect(processingKinds(model)).toContain('declared-decode');
+        expect(processingKinds(model)).toContain('resample');
+        expect(model.processing.find((entry) => entry.kind === 'resample')?.detail).toBe(
+            '352800 Hz -> 192000 Hz',
+        );
+        expect(model.integrity.status).not.toBe('bit-perfect-verified');
+        expect(model.integrity.status).not.toBe('bit-perfect-eligible');
     });
 
     it('caps shared routes at unprocessed-shared', () => {

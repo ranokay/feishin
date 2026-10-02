@@ -34,6 +34,7 @@
         "lint": "pnpm run typecheck && pnpm run lint-code && pnpm run lint-styles",
         "lint:commits": "commitlint",
         "test": "vitest run",
+        "test:bittransparency": "vitest run bit-transparency --reporter=verbose",
         "lint:fix": "pnpm run lint-code:fix && pnpm run lint-styles:fix",
         "lint:staged": "lint-staged",
         "lint-code": "eslint --max-warnings=0 --cache .",

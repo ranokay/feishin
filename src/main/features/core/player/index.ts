@@ -515,7 +515,6 @@ ipcMain.handle(
     async (
         _event,
         data: {
-            binaryPath?: string;
             extraParameters?: string[];
             playbackPolicy?: PlaybackPolicy;
             properties?: Record<string, any>;

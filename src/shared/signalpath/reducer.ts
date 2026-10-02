@@ -19,6 +19,7 @@ import {
     declaresDeEmphasis,
     DEFAULT_SOURCE_DECODE_OPTIONS,
     HDCD_EXPANDED_BIT_DEPTH,
+    isSourceDecodeActive,
 } from './source-decode';
 
 export interface ProcessingEntry {
@@ -293,6 +294,7 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
         decodedParams: snapshot.decodedParams,
         filterEvidenceLevel: snapshot.activeFilters === null ? 'unknown' : 'confirmed',
         outputParams: snapshot.outputParams,
+        requestedSourceDecode: isSourceDecodeActive(sourceDecode),
         route: snapshot.aoDriver ?? '',
         routeEvidenceLevel: snapshot.aoDriver === null ? 'unknown' : 'confirmed',
         serverRoute: serverRoute?.route ?? 'unverified',

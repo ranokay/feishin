@@ -347,6 +347,25 @@ describe('buildSignalPathModel', () => {
         expect(filter?.detail).toContain('aemphasis');
     });
 
+    it('never claims bit-perfect while an opted decode is missing from the chain', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                serverRoute: {
+                    detail: null,
+                    level: 'confirmed',
+                    route: 'direct-stream',
+                    verification: 'size-match',
+                },
+            }),
+            sourceDecode: { deEmphasis: false, hdcd: true },
+        });
+
+        expect(model.integrity.status).not.toBe('bit-perfect-verified');
+        expect(model.integrity.status).not.toBe('bit-perfect-eligible');
+        expect(model.integrity.missingEvidence).toContain('source-decode');
+    });
+
     it('flags an output format too narrow for the hdcd expansion', () => {
         const model = buildSignalPathModel({
             ...baseInputs,

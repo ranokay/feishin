@@ -1,6 +1,6 @@
 import type { SourceDecodeOptions } from './source-decode';
 
-import { isSourceDecodeActive } from './source-decode';
+import { describeAfEntry, isSourceDecodeActive } from './source-decode';
 
 export type StrictPropertyName = keyof StrictPropertyValues;
 
@@ -79,28 +79,6 @@ export function strictPropertyRecord(pins: readonly StrictPropertyPin[]): Record
     return Object.fromEntries(pins.map((pin) => [pin.name, pin.value]));
 }
 
-function describeFilterName(filter: unknown): string {
-    if (typeof filter === 'string') {
-        return filter;
-    }
-    if (typeof filter !== 'object' || filter === null) {
-        return '';
-    }
-    const name = 'name' in filter && typeof filter.name === 'string' ? filter.name : '';
-    const params = 'params' in filter ? filter.params : null;
-    const graph =
-        typeof params === 'object' &&
-        params !== null &&
-        'graph' in params &&
-        typeof params.graph === 'string'
-            ? params.graph.trim()
-            : '';
-    if (graph.length > 0) {
-        return name.length > 0 ? `${name}:${graph}` : graph;
-    }
-    return name;
-}
-
 function describeValue(value: unknown): string {
     if (value === null || value === undefined || value === '') {
         return 'unset';
@@ -115,5 +93,5 @@ function readFilterNames(value: unknown): string[] {
     if (!Array.isArray(value)) {
         return typeof value === 'string' && value.length > 0 ? [value] : [];
     }
-    return value.map(describeFilterName).filter((name) => name.length > 0);
+    return value.map(describeAfEntry).filter((name) => name.length > 0);
 }

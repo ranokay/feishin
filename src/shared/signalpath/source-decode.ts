@@ -63,6 +63,28 @@ export function declaresDeEmphasis(tags: null | Record<string, string[]> | undef
     return false;
 }
 
+/**
+ * Names one observed mpv `af` entry. mpv reports graph filters as
+ * `{name:'lavfi', params:{graph:'hdcd'}}`; the graph string carries the actual
+ * filter identity, so it is part of the name.
+ */
+export function describeAfEntry(filter: unknown): string {
+    if (typeof filter === 'string') {
+        return filter;
+    }
+    if (!isRecord(filter)) {
+        return String(filter ?? '');
+    }
+    const name = typeof filter['name'] === 'string' ? filter['name'] : '';
+    const params = filter['params'];
+    const graph =
+        isRecord(params) && typeof params['graph'] === 'string' ? params['graph'].trim() : '';
+    if (graph.length > 0) {
+        return name.length > 0 ? `${name}:${graph}` : graph;
+    }
+    return name;
+}
+
 export function isSourceDecodeActive(options: SourceDecodeOptions): boolean {
     return options.hdcd || options.deEmphasis;
 }

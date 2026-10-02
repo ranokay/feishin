@@ -21,6 +21,7 @@ import type { MpvEventHandler } from './ipc-client';
 import {
     classifyAoFailure,
     classifyEndFileError,
+    describeAfEntry,
     evaluateServerRoute,
     findStrictPropertyViolation,
     parseCoreAudioFormatLine,
@@ -996,26 +997,6 @@ function compareParamTransition(
     return [];
 }
 
-/**
- * mpv reports graph filters as `{name:'lavfi', params:{graph:'hdcd'}}`; the
- * graph string carries the actual filter identity, so it is part of the name.
- */
-function describeFilterName(filter: unknown): string {
-    if (isRecord(filter)) {
-        const name = typeof filter['name'] === 'string' ? filter['name'] : '';
-        const params = filter['params'];
-        const graph =
-            isRecord(params) && typeof params['graph'] === 'string' ? params['graph'].trim() : '';
-        if (graph.length > 0) {
-            return name.length > 0 ? `${name}:${graph}` : graph;
-        }
-        if (name.length > 0) {
-            return name;
-        }
-    }
-    return String(filter ?? '');
-}
-
 function formatRate(rate: null | number): string {
     return rate === null ? 'unknown' : String(rate);
 }
@@ -1050,7 +1031,7 @@ function readFilterNames(value: unknown): string[] {
     if (!Array.isArray(value)) {
         return [];
     }
-    return value.map(describeFilterName).filter((name) => name.length > 0);
+    return value.map(describeAfEntry).filter((name) => name.length > 0);
 }
 
 function readOptionalBoolean(value: unknown): boolean | null {

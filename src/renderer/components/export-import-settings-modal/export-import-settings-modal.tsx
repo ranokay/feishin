@@ -32,10 +32,13 @@ export const ExportImportSettingsModal = () => {
 
     const onItemSelected = useCallback((itemContents: string) => {
         const settingsFile = JSON.parse(itemContents) as VersionedSettings;
+        // Import the migrated object, not the raw file: fields that predate the
+        // file's version must be normalized before the merge, or the current
+        // install's value would silently survive the restore.
+        const migrated = migrateSettings(settingsFile, settingsFile.version || 0);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Version needs to be omitted from the settings object
-        const { version, ...settings } = settingsFile;
-        const parsedResult = settings as SettingsState;
-        setSettingsFile(parsedResult);
+        const { version, ...settings } = migrated as VersionedSettings;
+        setSettingsFile(settings as SettingsState);
         setCurrentScreen(SCREENS.DIFF_VISUALS);
     }, []);
 

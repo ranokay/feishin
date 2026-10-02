@@ -10,5 +10,6 @@ export * from './policy';
 export * from './reducer';
 export * from './server-route';
 export * from './snapshot';
+export * from './source-decode';
 export * from './strict-fallback';
 export * from './strict-properties';

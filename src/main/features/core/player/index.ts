@@ -21,13 +21,14 @@ import { isMacOS, isWindows } from '/@/main/env';
 import {
     type AudioEngineEvent,
     type AudioSnapshot,
-    BIT_PERFECT_PROPERTY_PINS,
     isMpvPlaybackKeyQueued,
     type MpvLoadSource,
+    normalizeSourceDecodeOptions,
     type PlaybackPolicy,
     resolveMpvPlaybackKey,
     resolveStrictPlaybackStop,
     type StrictPlaybackStop,
+    strictPropertyPinsForSourceDecode,
 } from '/@/shared/signalpath';
 import { PlayerData } from '/@/shared/types/domain-types';
 
@@ -98,9 +99,13 @@ const publishStrictObservabilityFailure = () => {
 // Callers await this before returning to the renderer: verbose AO logs only cover
 // messages emitted after request_log_messages lands, so the first loadfile must not
 // beat it or the AO negotiation lines are missed until the next reconfig.
-const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standard') => {
+const attachAudioStateService = async (
+    playbackPolicy: PlaybackPolicy = 'standard',
+    sourceDecode?: unknown,
+) => {
     stopAudioStateService();
     const generation = audioStateGeneration;
+    const sourceDecodeOptions = normalizeSourceDecodeOptions(sourceDecode);
     try {
         const commandMpv = getMpvInstance();
         const connection = await MpvIpcConnection.connect(socketPath);
@@ -175,7 +180,9 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
             resolvePlaybackKey: (path, position) =>
                 resolveMpvPlaybackKey(queuedStreams, path, position),
             strictPropertyPins:
-                playbackPolicy === 'bit-perfect' ? BIT_PERFECT_PROPERTY_PINS : undefined,
+                playbackPolicy === 'bit-perfect'
+                    ? strictPropertyPinsForSourceDecode(sourceDecodeOptions)
+                    : undefined,
         });
         await service.start();
         if (generation !== audioStateGeneration) {
@@ -511,6 +518,7 @@ ipcMain.handle(
             extraParameters?: string[];
             playbackPolicy?: PlaybackPolicy;
             properties?: Record<string, any>;
+            sourceDecode?: unknown;
         },
     ) => {
         try {
@@ -538,7 +546,7 @@ ipcMain.handle(
             } finally {
                 mpvCreatePromise = null;
             }
-            await attachAudioStateService(data.playbackPolicy);
+            await attachAudioStateService(data.playbackPolicy, data.sourceDecode);
             mpvLog({ action: 'Restarted mpv', toast: 'success' });
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
@@ -556,6 +564,7 @@ ipcMain.handle(
             extraParameters?: string[];
             playbackPolicy?: PlaybackPolicy;
             properties?: Record<string, any>;
+            sourceDecode?: unknown;
         },
     ) => {
         try {
@@ -570,7 +579,7 @@ ipcMain.handle(
             } finally {
                 mpvCreatePromise = null;
             }
-            await attachAudioStateService(data.playbackPolicy);
+            await attachAudioStateService(data.playbackPolicy, data.sourceDecode);
             setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
             mpvLog({ action: 'Failed to initialize mpv, falling back to web player' }, err);

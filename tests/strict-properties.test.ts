@@ -15,6 +15,7 @@ const source: SourceDeclaration = {
     bitDepth: 16,
     channelCount: 2,
     codec: 'flac',
+    deEmphasisDeclared: false,
     lossless: true,
     pcmOrDsd: 'pcm',
     samplingRate: 44100,
@@ -108,7 +109,7 @@ describe('Bit-Perfect runtime property pins', () => {
             property: 'af',
         });
         expect(findStrictPropertyViolation(filterPin, [{ label: 'unknown' }])).toEqual({
-            actual: '[{"label":"unknown"}]',
+            actual: '{"label":"unknown"}',
             expected: 'none',
             property: 'af',
         });

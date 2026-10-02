@@ -13,6 +13,7 @@ const flacSource: SourceDeclaration = {
     bitDepth: 16,
     channelCount: 2,
     codec: 'flac',
+    deEmphasisDeclared: false,
     lossless: true,
     pcmOrDsd: 'pcm',
     samplingRate: 44100,
@@ -67,10 +68,40 @@ describe('declareSource', () => {
             bitDepth: 24,
             channelCount: 2,
             codec: 'flac',
+            deEmphasisDeclared: false,
             lossless: true,
             pcmOrDsd: 'pcm',
             samplingRate: 96000,
         });
+    });
+
+    it('declares CD emphasis only from truthy emphasis tags', () => {
+        expect(
+            declareSource({
+                bitDepth: 16,
+                channels: 2,
+                container: 'flac',
+                sampleRate: 44100,
+                tags: { PREEMPHASIS: ['1'] },
+            })?.deEmphasisDeclared,
+        ).toBe(true);
+        expect(
+            declareSource({
+                bitDepth: 16,
+                channels: 2,
+                container: 'flac',
+                sampleRate: 44100,
+                tags: { artist: ['someone'] },
+            })?.deEmphasisDeclared,
+        ).toBe(false);
+        expect(
+            declareSource({
+                bitDepth: 16,
+                channels: 2,
+                container: 'flac',
+                sampleRate: 44100,
+            })?.deEmphasisDeclared,
+        ).toBe(false);
     });
 
     it('classifies lossy containers and dsd codecs', () => {
@@ -239,6 +270,128 @@ describe('buildSignalPathModel', () => {
         const filter = model.processing.find((entry) => entry.kind === 'filter');
         expect(filter?.detail).toContain('lavfi');
         expect(filter?.level).toBe('confirmed');
+    });
+
+    it('shows an enabled source decode as requested until it is observed', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            sourceDecode: { deEmphasis: false, hdcd: true },
+        });
+
+        const entry = model.processing.find((candidate) => candidate.kind === 'declared-decode');
+        expect(entry?.detail).toContain('hdcd');
+        expect(entry?.level).toBe('requested');
+    });
+
+    it('confirms an observed source decode and never duplicates it as a generic filter', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ activeFilters: ['lavfi:hdcd'] }),
+            sourceDecode: { deEmphasis: false, hdcd: true },
+        });
+
+        const entries = model.processing.filter((entry) => entry.kind === 'declared-decode');
+        expect(entries).toHaveLength(1);
+        expect(entries[0].level).toBe('confirmed');
+        expect(model.processing.filter((entry) => entry.kind === 'filter')).toHaveLength(0);
+        // An active decode is never a bit-perfect chain.
+        expect(model.integrity.status).toBe('exclusive-processed');
+    });
+
+    it('classifies an externally configured hdcd filter even with the option off', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ activeFilters: ['lavfi:hdcd'] }),
+        });
+
+        const entry = model.processing.find((candidate) => candidate.kind === 'declared-decode');
+        expect(entry?.detail).toContain('hdcd');
+        expect(entry?.level).toBe('confirmed');
+    });
+
+    it('shows source-declared de-emphasis as not applied while disabled', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            source: { ...flacSource, deEmphasisDeclared: true },
+        });
+
+        const entry = model.processing.find((candidate) => candidate.kind === 'declared-decode');
+        expect(entry?.detail).toContain('not applied');
+        expect(entry?.level).toBe('inferred');
+    });
+
+    it('confirms applied de-emphasis without a not-applied duplicate', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ activeFilters: ['lavfi:aemphasis=type=cd'] }),
+            source: { ...flacSource, deEmphasisDeclared: true },
+            sourceDecode: { deEmphasis: true, hdcd: false },
+        });
+
+        const entries = model.processing.filter((entry) => entry.kind === 'declared-decode');
+        expect(entries).toHaveLength(1);
+        expect(entries[0].level).toBe('confirmed');
+        expect(entries[0].detail).not.toContain('not applied');
+    });
+
+    it('keeps non-CD aemphasis curves as generic filters', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ activeFilters: ['lavfi:aemphasis=type=col'] }),
+        });
+
+        expect(model.processing.filter((entry) => entry.kind === 'declared-decode')).toHaveLength(
+            0,
+        );
+        const filter = model.processing.find((entry) => entry.kind === 'filter');
+        expect(filter?.detail).toContain('aemphasis');
+    });
+
+    it('never claims bit-perfect while an opted decode is missing from the chain', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                serverRoute: {
+                    detail: null,
+                    level: 'confirmed',
+                    route: 'direct-stream',
+                    verification: 'size-match',
+                },
+            }),
+            sourceDecode: { deEmphasis: false, hdcd: true },
+        });
+
+        expect(model.integrity.status).not.toBe('bit-perfect-verified');
+        expect(model.integrity.status).not.toBe('bit-perfect-eligible');
+        expect(model.integrity.missingEvidence).toContain('source-decode');
+    });
+
+    it('flags an output format too narrow for the hdcd expansion', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                activeFilters: ['lavfi:hdcd'],
+                outputParams: { channels: 2, format: 's16', samplerate: 44100 },
+            }),
+            sourceDecode: { deEmphasis: false, hdcd: true },
+        });
+
+        const truncation = model.processing.find((entry) => entry.kind === 'format-conversion');
+        expect(truncation?.detail).toContain('20-bit');
+        expect(truncation?.detail).toContain('s16');
+        expect(model.integrity.status).toBe('exclusive-processed');
+    });
+
+    it('accepts a 20-bit-safe output for the hdcd expansion', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ activeFilters: ['lavfi:hdcd'] }),
+            sourceDecode: { deEmphasis: false, hdcd: true },
+        });
+
+        expect(model.processing.filter((entry) => entry.kind === 'format-conversion')).toHaveLength(
+            0,
+        );
     });
 
     it('lists tempo processing when speed differs from 1', () => {

@@ -3,15 +3,24 @@ import type { DecodedParams, SourceDeclaration } from './formats';
 import type { PlaybackPolicy } from './policy';
 import type { ReplayGainMode } from './policy';
 import type { AudioSnapshot } from './snapshot';
+import type { SourceDecodeFilter, SourceDecodeOptions } from './source-decode';
 
 import { weakestLevel } from './evidence';
 import {
+    isDepthWidening,
     isDsdCarrierRate,
     isDsdContainer,
     isPrecisionPreserving,
     normalizeContainer,
 } from './formats';
 import { evaluateIntegrity, type IntegrityVerdict } from './integrity';
+import {
+    classifySourceDecodeFilter,
+    declaresDeEmphasis,
+    DEFAULT_SOURCE_DECODE_OPTIONS,
+    HDCD_EXPANDED_BIT_DEPTH,
+    isSourceDecodeActive,
+} from './source-decode';
 
 export interface ProcessingEntry {
     detail: null | string;
@@ -34,6 +43,7 @@ export interface SignalPathInputs {
     replayGainMode: ReplayGainMode;
     snapshot: AudioSnapshot | null;
     source: null | SourceDeclaration;
+    sourceDecode?: SourceDecodeOptions;
 }
 
 export interface SignalPathItem {
@@ -67,6 +77,7 @@ export function declareSource(song: {
     channels: null | number;
     container: null | string;
     sampleRate: null | number;
+    tags?: null | Record<string, string[]>;
 }): null | SourceDeclaration {
     if (!song.container) {
         return null;
@@ -81,16 +92,23 @@ export function declareSource(song: {
         bitDepth: song.bitDepth ?? null,
         channelCount: song.channels ?? null,
         codec,
+        deEmphasisDeclared: declaresDeEmphasis(song.tags),
         lossless,
         pcmOrDsd: isDsdContainer(codec) ? 'dsd' : 'pcm',
         samplingRate: song.sampleRate ?? null,
     };
 }
 
+const DECLARED_DECODE_DETAIL: Record<SourceDecodeFilter, string> = {
+    deEmphasis: 'aemphasis: cd',
+    hdcd: 'hdcd expansion',
+};
+
 function collectProcessing(
     replayGainMode: ReplayGainMode,
     snapshot: AudioSnapshot,
     source: null | SourceDeclaration,
+    sourceDecode: SourceDecodeOptions,
 ): ProcessingEntry[] {
     const processing: ProcessingEntry[] = [];
 
@@ -111,8 +129,54 @@ function collectProcessing(
         });
     }
 
+    const observedDecodes = new Set<SourceDecodeFilter>();
+    const outputFormat = snapshot.outputParams?.format ?? null;
     for (const filter of snapshot.activeFilters ?? []) {
+        const decode = classifySourceDecodeFilter(filter);
+        if (decode) {
+            observedDecodes.add(decode);
+            processing.push({
+                detail: DECLARED_DECODE_DETAIL[decode],
+                kind: 'declared-decode',
+                level: 'confirmed',
+            });
+            if (
+                decode === 'hdcd' &&
+                outputFormat !== null &&
+                !isDepthWidening(HDCD_EXPANDED_BIT_DEPTH, outputFormat)
+            ) {
+                processing.push({
+                    detail: `${HDCD_EXPANDED_BIT_DEPTH}-bit expansion limited by ${outputFormat} output`,
+                    kind: 'format-conversion',
+                    level: 'confirmed',
+                });
+            }
+            continue;
+        }
         processing.push({ detail: filter, kind: 'filter', level: 'confirmed' });
+    }
+
+    if (sourceDecode.hdcd && !observedDecodes.has('hdcd')) {
+        processing.push({
+            detail: `${DECLARED_DECODE_DETAIL.hdcd}, requested`,
+            kind: 'declared-decode',
+            level: 'requested',
+        });
+    }
+    if (sourceDecode.deEmphasis) {
+        if (!observedDecodes.has('deEmphasis')) {
+            processing.push({
+                detail: `${DECLARED_DECODE_DETAIL.deEmphasis}, requested`,
+                kind: 'declared-decode',
+                level: 'requested',
+            });
+        }
+    } else if (source?.deEmphasisDeclared && !observedDecodes.has('deEmphasis')) {
+        processing.push({
+            detail: `${DECLARED_DECODE_DETAIL.deEmphasis}, declared not applied`,
+            kind: 'declared-decode',
+            level: 'inferred',
+        });
     }
 
     if (snapshot.speed !== null && snapshot.speed !== 1) {
@@ -202,6 +266,7 @@ const UNKNOWN_ITEM: SignalPathItem = { detail: null, level: 'unknown', value: nu
 
 export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel {
     const { policy, replayGainMode, snapshot, source } = inputs;
+    const sourceDecode = inputs.sourceDecode ?? DEFAULT_SOURCE_DECODE_OPTIONS;
     const requestedExclusive = policy === 'bit-perfect' || policy === 'exclusive';
 
     if (!snapshot) {
@@ -219,7 +284,7 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
         };
     }
 
-    const processing = collectProcessing(replayGainMode, snapshot, source);
+    const processing = collectProcessing(replayGainMode, snapshot, source, sourceDecode);
 
     const serverRoute = snapshot.serverRoute ?? null;
 
@@ -229,6 +294,7 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
         decodedParams: snapshot.decodedParams,
         filterEvidenceLevel: snapshot.activeFilters === null ? 'unknown' : 'confirmed',
         outputParams: snapshot.outputParams,
+        requestedSourceDecode: isSourceDecodeActive(sourceDecode),
         route: snapshot.aoDriver ?? '',
         routeEvidenceLevel: snapshot.aoDriver === null ? 'unknown' : 'confirmed',
         serverRoute: serverRoute?.route ?? 'unverified',

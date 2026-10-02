@@ -17,6 +17,7 @@ import {
 import {
     useEffectivePlaybackPolicy,
     usePlaybackSettings,
+    useSettingsStore,
     useSettingsStoreActions,
 } from '/@/renderer/store/settings.store';
 import { Button } from '/@/shared/components/button/button';
@@ -297,7 +298,8 @@ export const EqSettings = memo(() => {
         (eq: EqSettingsType, compressor: CompressorSettings) => {
             // ── MPV player ────────────────────────────────────────────────
             if (settings.type === PlayerType.LOCAL) {
-                const filterStr = buildMpvAudioFilters(eq, compressor);
+                const { sourceDecode } = useSettingsStore.getState().playback;
+                const filterStr = buildMpvAudioFilters(eq, compressor, { sourceDecode });
                 mpvPlayer?.setProperties({ af: filterStr });
                 return;
             }

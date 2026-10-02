@@ -1,3 +1,7 @@
+import type { SourceDecodeOptions } from './source-decode';
+
+import { describeAfEntry, isSourceDecodeActive } from './source-decode';
+
 export type StrictPropertyName = keyof StrictPropertyValues;
 
 export type StrictPropertyPin = {
@@ -57,6 +61,20 @@ export function findStrictPropertyViolation(
     };
 }
 
+/**
+ * An explicit source-faithful decode is user-intended processing, so repairing
+ * `af` back to empty would delete the opted filter. The pin is lifted while a
+ * decode is active; the Signal Path still reports the observed chain and the
+ * verdict can never reach bit-perfect.
+ */
+export function strictPropertyPinsForSourceDecode(
+    options: SourceDecodeOptions,
+): readonly StrictPropertyPin[] {
+    return isSourceDecodeActive(options)
+        ? BIT_PERFECT_PROPERTY_PINS.filter((pin) => pin.name !== 'af')
+        : BIT_PERFECT_PROPERTY_PINS;
+}
+
 export function strictPropertyRecord(pins: readonly StrictPropertyPin[]): Record<string, unknown> {
     return Object.fromEntries(pins.map((pin) => [pin.name, pin.value]));
 }
@@ -75,20 +93,5 @@ function readFilterNames(value: unknown): string[] {
     if (!Array.isArray(value)) {
         return typeof value === 'string' && value.length > 0 ? [value] : [];
     }
-    return value
-        .map((filter) => {
-            if (typeof filter === 'string') {
-                return filter;
-            }
-            if (
-                typeof filter === 'object' &&
-                filter !== null &&
-                'name' in filter &&
-                typeof filter.name === 'string'
-            ) {
-                return filter.name;
-            }
-            return '';
-        })
-        .filter((name) => name.length > 0);
+    return value.map(describeAfEntry).filter((name) => name.length > 0);
 }

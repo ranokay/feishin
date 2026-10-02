@@ -24,6 +24,8 @@ export interface SourceDeclaration {
     bitDepth: null | number;
     channelCount: null | number;
     codec: string;
+    /** Source tags declare a CD pre-emphasis flag that needs de-emphasis on decode. */
+    deEmphasisDeclared: boolean;
     lossless: boolean | null;
     pcmOrDsd: 'dsd' | 'pcm' | 'unknown';
     samplingRate: null | number;

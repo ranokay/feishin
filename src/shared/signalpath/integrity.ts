@@ -3,6 +3,7 @@ import type { DecodedParams, OutputParams, SourceDeclaration } from './formats';
 import type { StrictPropertyViolation } from './strict-properties';
 
 import { isDsdCarrierRate, isPrecisionPreserving } from './formats';
+import { classifySourceDecodeFilter } from './source-decode';
 
 // Drivers whose NAME alone proves an exclusive route. Bare 'wasapi'/'pipewire'
 // are excluded on purpose: mpv reports those names for ordinary shared playback
@@ -15,6 +16,8 @@ export interface IntegrityObservation {
     decodedParams: DecodedParams | null;
     filterEvidenceLevel: ConfidenceLevel;
     outputParams: null | OutputParams;
+    /** An explicit source-faithful decode was opted in for this playback. */
+    requestedSourceDecode?: boolean;
     route: string;
     routeEvidenceLevel: ConfidenceLevel;
     serverRoute: 'direct-stream' | 'transcoded' | 'unknown' | 'unverified';
@@ -85,6 +88,14 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
 
     if (!observation.outputParams) {
         missingEvidence.push('output');
+    }
+    // An opted-in decode that is not visible in the observed chain means the
+    // requested signal path is unconfirmed; it must never read as bit-perfect.
+    if (
+        observation.requestedSourceDecode &&
+        !observation.activeUserFilters.some((filter) => classifySourceDecodeFilter(filter) !== null)
+    ) {
+        missingEvidence.push('source-decode');
     }
 
     const processing = collectProcessing(observation, detail);

@@ -21,6 +21,7 @@ import type { MpvEventHandler } from './ipc-client';
 import {
     classifyAoFailure,
     classifyEndFileError,
+    describeAfEntry,
     evaluateServerRoute,
     findStrictPropertyViolation,
     parseCoreAudioFormatLine,
@@ -1030,13 +1031,7 @@ function readFilterNames(value: unknown): string[] {
     if (!Array.isArray(value)) {
         return [];
     }
-    return value
-        .map((filter) =>
-            isRecord(filter) && typeof filter['name'] === 'string'
-                ? filter['name']
-                : String(filter ?? ''),
-        )
-        .filter((name) => name.length > 0);
+    return value.map(describeAfEntry).filter((name) => name.length > 0);
 }
 
 function readOptionalBoolean(value: unknown): boolean | null {

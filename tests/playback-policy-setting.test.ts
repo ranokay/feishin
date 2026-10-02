@@ -5,8 +5,10 @@ import {
     type DeviceProfileMap,
     normalizeDeviceProfiles,
     normalizePlaybackPolicy,
+    normalizeSourceDecodeOptions,
     PLAYBACK_POLICIES,
     type PlaybackPolicy,
+    type SourceDecodeOptions,
 } from '../src/shared/signalpath';
 
 const PlaybackPolicySchema = z.object({
@@ -28,6 +30,15 @@ const migrateDeviceProfiles = (persisted: {
 }): { playback: { deviceProfiles: DeviceProfileMap } } => ({
     playback: {
         deviceProfiles: normalizeDeviceProfiles(persisted.playback?.deviceProfiles),
+    },
+});
+
+// Mirrors the store migration block for persisted settings version < 38.
+const migrateSourceDecode = (persisted: {
+    playback?: { sourceDecode?: unknown };
+}): { playback: { sourceDecode: SourceDecodeOptions } } => ({
+    playback: {
+        sourceDecode: normalizeSourceDecodeOptions(persisted.playback?.sourceDecode),
     },
 });
 
@@ -116,5 +127,28 @@ describe('persisted device profile migration', () => {
         expect(migrated.playback.deviceProfiles).toEqual({
             'usb-dac': { description: 'USB DAC', policyOverride: 'bit-perfect' },
         });
+    });
+});
+
+describe('persisted source decode migration', () => {
+    it('defaults both decodes to off for installs that predate the setting', () => {
+        expect(migrateSourceDecode({}).playback.sourceDecode).toEqual({
+            deEmphasis: false,
+            hdcd: false,
+        });
+    });
+
+    it('preserves an explicit opt-in across migration', () => {
+        expect(
+            migrateSourceDecode({ playback: { sourceDecode: { hdcd: true } } }).playback
+                .sourceDecode,
+        ).toEqual({ deEmphasis: false, hdcd: true });
+    });
+
+    it('resets corrupted values to off instead of trusting them', () => {
+        expect(
+            migrateSourceDecode({ playback: { sourceDecode: { deEmphasis: 'yes', hdcd: 1 } } })
+                .playback.sourceDecode,
+        ).toEqual({ deEmphasis: false, hdcd: false });
     });
 });

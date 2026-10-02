@@ -212,8 +212,8 @@ describe('applyPropertyValue', () => {
                 { label: '', name: 'lavfi', params: { graph: 'equalizer=f=60' } },
                 { name: 'volume' },
             ]),
-        ).toEqual([{ detail: 'lavfi,volume', type: 'filters-changed' }]);
-        expect(state.activeFilters).toEqual(['lavfi', 'volume']);
+        ).toEqual([{ detail: 'lavfi:equalizer=f=60,volume', type: 'filters-changed' }]);
+        expect(state.activeFilters).toEqual(['lavfi:equalizer=f=60', 'volume']);
     });
 
     it('tracks scalar properties without transition events on first sight', () => {

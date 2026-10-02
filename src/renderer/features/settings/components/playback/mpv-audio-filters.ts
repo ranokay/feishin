@@ -1,6 +1,12 @@
 // Builds the MPV `af` audio filter chain string for EQ and compressor.
 // Uses FFmpeg lavfi filters, which MPV exposes natively.
 
+import {
+    DEFAULT_SOURCE_DECODE_OPTIONS,
+    sourceDecodeFilterEntries,
+    type SourceDecodeOptions,
+} from '/@/shared/signalpath';
+
 export interface CompressorSettings {
     attack: number; // ms
     enabled: boolean;
@@ -39,12 +45,28 @@ const BAND_WIDTHS: Record<number, number> = {
     16000: 1.5,
 };
 
+export interface MpvAudioFilterOptions {
+    /** Bit-Perfect keeps user DSP suppressed while still allowing an opted source decode. */
+    includeUserDsp?: boolean;
+    sourceDecode?: SourceDecodeOptions;
+}
+
 /**
  * Returns the MPV `af` property value for the given EQ + compressor settings.
  * An empty string clears all filters (pass-through).
  */
-export function buildMpvAudioFilters(eq: EqSettings, compressor: CompressorSettings): string {
-    const parts: string[] = [];
+export function buildMpvAudioFilters(
+    eq: EqSettings,
+    compressor: CompressorSettings,
+    options: MpvAudioFilterOptions = {},
+): string {
+    const parts: string[] = [
+        ...sourceDecodeFilterEntries(options.sourceDecode ?? DEFAULT_SOURCE_DECODE_OPTIONS),
+    ];
+
+    if (options.includeUserDsp === false) {
+        return parts.join(',');
+    }
 
     if (eq.enabled) {
         // Apply preamp as a straight input gain before the band filters.

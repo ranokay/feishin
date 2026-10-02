@@ -29,6 +29,15 @@ export interface SourceDeclaration {
     samplingRate: null | number;
 }
 
+/**
+ * DSD streams carry bits at the carrier rate; decoders (dsd2pcm) expose PCM at
+ * carrier / 8 (DSD64: 2822400 -> 352800 Hz). Servers may declare either rate,
+ * depending on whether their metadata layer reports the carrier or the PCM.
+ */
+const DSD_PCM_RATE_FACTOR = 8;
+
+const DSD_CONTAINERS = new Set(['dff', 'dsf']);
+
 export function compareFormats(from: string, to: string): FormatRelation {
     if (!isKnownPcmFormat(from) || !isKnownPcmFormat(to)) {
         return 'incomparable';
@@ -54,6 +63,14 @@ export function isDepthWidening(
     return FORMAT_CAPACITY_BITS[outputFormat] >= sourceBitDepth;
 }
 
+export function isDsdCarrierRate(carrierRate: number, pcmRate: number): boolean {
+    return carrierRate === pcmRate * DSD_PCM_RATE_FACTOR;
+}
+
+export function isDsdContainer(container: null | string): boolean {
+    return container !== null && DSD_CONTAINERS.has(normalizeContainer(container));
+}
+
 export function isKnownPcmFormat(format: string): format is PcmFormat {
     return format in FORMAT_CAPACITY_BITS;
 }
@@ -61,4 +78,10 @@ export function isKnownPcmFormat(format: string): format is PcmFormat {
 export function isPrecisionPreserving(from: string, to: string): boolean {
     const relation = compareFormats(from, to);
     return relation === 'same' || relation === 'widening';
+}
+
+/** Servers emit mime subtypes like x-flac / x-wav for ordinary containers. */
+export function normalizeContainer(container: string): string {
+    const lowered = container.trim().toLowerCase();
+    return lowered.startsWith('x-') ? lowered.slice(2) : lowered;
 }

@@ -14,6 +14,13 @@ export interface FixtureSpec {
 
 let ffmpegAvailability: Promise<null | string> | undefined;
 
+export interface DsfFixtureSpec {
+    /** DSD carrier bit rate in Hz: DSD64 = 2822400, DSD128 = 5644800. */
+    carrierRate: number;
+    channels: number;
+    durationSec: number;
+}
+
 export interface StandardFixtures {
     dir: string;
     wavByFileName: Record<string, string>;
@@ -122,6 +129,64 @@ export async function writeFlacFixture(dir: string, spec: FixtureSpec): Promise<
 export async function writeWavFixture(dir: string, spec: FixtureSpec): Promise<string> {
     const filePath = path.join(dir, fixtureFileName(spec, 'wav'));
     await writeFile(filePath, generateWav(spec));
+    return filePath;
+}
+
+const DSF_BLOCK_SIZE = 4096;
+// 0x69 is the canonical DSD idle/silence byte pattern.
+const DSF_SILENCE_BYTE = 0x69;
+
+export function dsfFixtureFileName(spec: DsfFixtureSpec): string {
+    return `dsd_${spec.carrierRate}_${spec.channels}ch_${spec.durationSec}s.dsf`;
+}
+
+/**
+ * Writes a minimal DSF (DSD Stream File) by hand: the format is simple enough
+ * that no encoder is needed, and ffmpeg's dsf demuxer only needs the DSD/fmt
+ * chunks plus channel-interleaved 4096-byte blocks (libavformat/dsfdec.c).
+ */
+export function generateDsf(spec: DsfFixtureSpec): Buffer {
+    const blocks = Math.max(
+        1,
+        Math.round((spec.durationSec * spec.carrierRate) / 8 / DSF_BLOCK_SIZE),
+    );
+    const bytesPerChannel = blocks * DSF_BLOCK_SIZE;
+    const sampleCount = bytesPerChannel * 8;
+    const dataBytes = bytesPerChannel * spec.channels;
+    const totalSize = 28 + 52 + 12 + dataBytes;
+
+    const header = Buffer.alloc(80);
+    header.write('DSD ', 0, 'ascii');
+    header.writeBigUInt64LE(28n, 4);
+    header.writeBigUInt64LE(BigInt(totalSize), 12);
+    header.writeBigUInt64LE(0n, 20); // no metadata pointer
+    header.write('fmt ', 28, 'ascii');
+    header.writeBigUInt64LE(52n, 32);
+    header.writeUInt32LE(1, 40); // format version
+    header.writeUInt32LE(0, 44); // format id: DSD raw
+    header.writeUInt32LE(spec.channels === 1 ? 1 : 2, 48); // channel type
+    header.writeUInt32LE(spec.channels, 52);
+    header.writeUInt32LE(spec.carrierRate, 56);
+    header.writeUInt32LE(1, 60); // 1 = least significant bit first
+    header.writeBigUInt64LE(BigInt(sampleCount), 64);
+    header.writeUInt32LE(DSF_BLOCK_SIZE, 72);
+    header.writeUInt32LE(0, 76); // reserved
+
+    const dataHeader = Buffer.alloc(12);
+    dataHeader.write('data', 0, 'ascii');
+    dataHeader.writeBigUInt64LE(BigInt(12 + dataBytes), 4);
+
+    const silenceBlock = Buffer.alloc(DSF_BLOCK_SIZE, DSF_SILENCE_BYTE);
+    const blocksPerChannel: Buffer[] = [];
+    for (let index = 0; index < blocks * spec.channels; index++) {
+        blocksPerChannel.push(silenceBlock);
+    }
+    return Buffer.concat([header, dataHeader, ...blocksPerChannel], totalSize);
+}
+
+export async function writeDsfFixture(dir: string, spec: DsfFixtureSpec): Promise<string> {
+    const filePath = path.join(dir, dsfFixtureFileName(spec));
+    await writeFile(filePath, generateDsf(spec));
     return filePath;
 }
 

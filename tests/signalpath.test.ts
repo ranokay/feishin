@@ -201,6 +201,43 @@ describe('evaluateIntegrity', () => {
         expect(verdict.detail.join(' ')).toContain('DSD converted to PCM');
     });
 
+    it('treats the DSD carrier-to-x8-PCM rate as declared conversion, not resampling', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: {
+                    ...cleanSource,
+                    codec: 'dsf',
+                    pcmOrDsd: 'dsd',
+                    samplingRate: 2822400,
+                },
+                decodedParams: { channels: 2, format: 'float', samplerate: 352800 },
+                outputParams: { channels: 2, format: 'float', samplerate: 352800 },
+            }),
+        );
+
+        expect(verdict.detail.join(' ')).not.toContain('rate mismatch');
+        expect(verdict.detail.join(' ')).not.toContain('rate change');
+        expect(verdict.status).toBe('exclusive-processed');
+    });
+
+    it('shows the resampled fallback when the output cannot take the x8 PCM rate', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: {
+                    ...cleanSource,
+                    codec: 'dsf',
+                    pcmOrDsd: 'dsd',
+                    samplingRate: 2822400,
+                },
+                decodedParams: { channels: 2, format: 'float', samplerate: 352800 },
+                outputParams: { channels: 2, format: 'float', samplerate: 192000 },
+            }),
+        );
+
+        expect(verdict.detail.join(' ')).toContain('352800 -> 192000');
+        expect(verdict.status).toBe('exclusive-processed');
+    });
+
     it('returns unknown when output evidence is absent', () => {
         const verdict = evaluateIntegrity(baseObservation({ outputParams: null }));
         expect(verdict.status).toBe('unknown');

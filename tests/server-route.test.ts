@@ -21,6 +21,22 @@ const RAW_HEADERS = {
     contentType: 'audio/flac',
 };
 
+// Navidrome/TagLib declare the DSD carrier rate (DSD64 = 2822400 Hz) while
+// mpv's demuxer exposes the x8 PCM rate dsd2pcm decodes to (352800 Hz).
+const DSD_SOURCE = {
+    bitDepth: 1,
+    channels: 2,
+    container: 'dsf',
+    sampleRate: 2_822_400,
+    sizeBytes: 360_540,
+};
+
+const DSD_DEMUXER = {
+    channels: 2,
+    codec: 'dsd_lsbf_planar',
+    samplerate: 352_800,
+};
+
 describe('evaluateServerRoute', () => {
     it('verifies a raw stream as direct-stream with confirmed size-match evidence', () => {
         const result = evaluateServerRoute({ headers: RAW_HEADERS, source: FLAC_SOURCE });
@@ -82,6 +98,115 @@ describe('evaluateServerRoute', () => {
 
         expect(result.route).toBe('transcoded');
         expect(result.detail).toContain('48000');
+    });
+
+    it('accepts a DSD direct stream whose demuxer reports the x8 PCM rate', () => {
+        const result = evaluateServerRoute({
+            demuxer: DSD_DEMUXER,
+            headers: {
+                acceptRanges: 'bytes',
+                contentLength: DSD_SOURCE.sizeBytes,
+                contentType: 'audio/x-dsf',
+            },
+            source: DSD_SOURCE,
+        });
+
+        expect(result.route).toBe('direct-stream');
+        expect(result.verification).toBe('size-match');
+        expect(result.detail).toBeNull();
+    });
+
+    it('accepts a DSD stream when the server declares the x8 PCM rate instead of the carrier', () => {
+        const result = evaluateServerRoute({
+            demuxer: DSD_DEMUXER,
+            source: { ...DSD_SOURCE, sampleRate: 352_800 },
+        });
+
+        expect(result.route).toBe('direct-stream');
+        expect(result.detail).toBeNull();
+    });
+
+    it('accepts a DSD codec alias on a .dff container', () => {
+        const result = evaluateServerRoute({
+            demuxer: { channels: 2, codec: 'dsd_msbf', samplerate: 352_800 },
+            source: { ...DSD_SOURCE, container: 'dff' },
+        });
+
+        expect(result.route).toBe('direct-stream');
+    });
+
+    it('normalizes a mime-style x-dsf container for DSD codec and rate checks', () => {
+        const result = evaluateServerRoute({
+            demuxer: { channels: 2, codec: 'dsd_lsbf_planar', samplerate: 352_800 },
+            source: { ...DSD_SOURCE, container: 'x-dsf' },
+        });
+
+        expect(result.route).toBe('direct-stream');
+        expect(result.detail).toBeNull();
+    });
+
+    it('accepts the DSD rate pair in either direction', () => {
+        const result = evaluateServerRoute({
+            demuxer: { channels: 2, codec: 'dsd_lsbf_planar', samplerate: 2_822_400 },
+            source: { ...DSD_SOURCE, sampleRate: 352_800 },
+        });
+
+        expect(result.route).toBe('direct-stream');
+    });
+
+    it('matches DSD codec names case-insensitively', () => {
+        const result = evaluateServerRoute({
+            demuxer: { channels: 2, codec: 'DSD_LSBF_PLANAR', samplerate: 352_800 },
+            source: DSD_SOURCE,
+        });
+
+        expect(result.route).toBe('direct-stream');
+    });
+
+    it('accepts dff mime aliases for a dff container', () => {
+        const result = evaluateServerRoute({
+            headers: {
+                acceptRanges: 'bytes',
+                contentLength: DSD_SOURCE.sizeBytes,
+                contentType: 'audio/x-dff',
+            },
+            source: { ...DSD_SOURCE, container: 'dff' },
+        });
+
+        expect(result.route).toBe('direct-stream');
+    });
+
+    it('normalizes the container before the mime lookup', () => {
+        const result = evaluateServerRoute({
+            headers: {
+                acceptRanges: 'bytes',
+                contentLength: DSD_SOURCE.sizeBytes,
+                contentType: 'audio/dsf',
+            },
+            source: { ...DSD_SOURCE, container: 'x-dsf' },
+        });
+
+        expect(result.route).toBe('direct-stream');
+    });
+
+    it('still flags a DSD stream whose rate is neither the carrier nor its x8 PCM rate', () => {
+        const result = evaluateServerRoute({
+            demuxer: { channels: 2, codec: 'dsd_lsbf_planar', samplerate: 44_100 },
+            source: DSD_SOURCE,
+        });
+
+        expect(result.route).toBe('transcoded');
+        expect(result.detail).toContain('44100');
+    });
+
+    it('still flags a non-DSD codec on a DSD container', () => {
+        const result = evaluateServerRoute({
+            demuxer: { channels: 2, codec: 'flac', samplerate: 352_800 },
+            source: DSD_SOURCE,
+        });
+
+        expect(result.route).toBe('transcoded');
+        expect(result.detail).toContain('flac');
     });
 
     it('degrades to unknown when nothing could be observed', () => {

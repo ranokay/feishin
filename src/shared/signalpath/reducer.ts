@@ -5,7 +5,12 @@ import type { ReplayGainMode } from './policy';
 import type { AudioSnapshot } from './snapshot';
 
 import { weakestLevel } from './evidence';
-import { isPrecisionPreserving } from './formats';
+import {
+    isDsdCarrierRate,
+    isDsdContainer,
+    isPrecisionPreserving,
+    normalizeContainer,
+} from './formats';
 import { evaluateIntegrity, type IntegrityVerdict } from './integrity';
 
 export interface ProcessingEntry {
@@ -52,7 +57,6 @@ export interface SignalPathModel {
 }
 
 const LOSSLESS_CONTAINERS = new Set(['aiff', 'alac', 'ape', 'flac', 'shn', 'wav', 'wv']);
-const DSD_CONTAINERS = new Set(['dff', 'dsf']);
 // Containers that are definitively lossy; anything else unknown stays unknown
 // instead of producing a false lossy-source verdict (e.g. ALAC inside m4a,
 // which is deliberately treated as unknown fidelity and gated at eligible).
@@ -78,7 +82,7 @@ export function declareSource(song: {
         channelCount: song.channels ?? null,
         codec,
         lossless,
-        pcmOrDsd: DSD_CONTAINERS.has(codec) ? 'dsd' : 'pcm',
+        pcmOrDsd: isDsdContainer(codec) ? 'dsd' : 'pcm',
         samplingRate: song.sampleRate ?? null,
     };
 }
@@ -158,7 +162,7 @@ function collectProcessing(
 
     if (source?.pcmOrDsd === 'dsd') {
         processing.push({
-            detail: 'dsd2pcm',
+            detail: dsdConversionDetail(source, snapshot.decodedParams),
             kind: 'declared-decode',
             level: 'inferred',
         });
@@ -167,10 +171,31 @@ function collectProcessing(
     return processing;
 }
 
-function normalizeContainer(container: string): string {
-    const lowered = container.trim().toLowerCase();
-    // Servers emit mime subtypes like x-flac / x-wav for ordinary containers.
-    return lowered.startsWith('x-') ? lowered.slice(2) : lowered;
+/**
+ * Servers report either the DSD carrier rate (Navidrome/TagLib) or the x8 PCM
+ * rate; the decoder always exposes the PCM rate. Label whichever pair is known
+ * instead of inventing the missing one.
+ */
+function dsdConversionDetail(
+    source: SourceDeclaration,
+    decodedParams: DecodedParams | null,
+): string {
+    const carrierRate = source.samplingRate;
+    const pcmRate = decodedParams?.samplerate ?? null;
+    if (carrierRate !== null && pcmRate !== null && carrierRate !== pcmRate) {
+        return isDsdCarrierRate(carrierRate, pcmRate)
+            ? `dsd2pcm: ${carrierRate} Hz carrier -> ${pcmRate} Hz PCM`
+            : `dsd2pcm: ${carrierRate} Hz -> ${pcmRate} Hz PCM`;
+    }
+    if (pcmRate !== null) {
+        return `dsd2pcm: ${pcmRate} Hz PCM`;
+    }
+    if (carrierRate !== null) {
+        // Without a decode rate the declared number cannot be identified as
+        // the carrier or its PCM quotient, so do not qualify it as either.
+        return `dsd2pcm: ${carrierRate} Hz`;
+    }
+    return 'dsd2pcm';
 }
 
 const UNKNOWN_ITEM: SignalPathItem = { detail: null, level: 'unknown', value: null };

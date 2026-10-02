@@ -1,5 +1,7 @@
 import type { ConfidenceLevel } from './evidence';
 
+import { isDsdCarrierRate, isDsdContainer, normalizeContainer } from './formats';
+
 /**
  * Server-route verification: did the server return the original file bytes for
  * the playing track, or a transcode? Combines cheap HTTP header inspection
@@ -102,6 +104,7 @@ const MIME_SUBTYPES_BY_CONTAINER: Record<string, string[]> = {
     aac: ['aac', 'm4a', 'mp4'],
     aiff: ['aiff', 'x-aiff'],
     alac: ['alac', 'm4a', 'mp4'],
+    dff: ['dff', 'x-dff'],
     dsf: ['dsf', 'x-dsf'],
     flac: ['flac', 'x-flac'],
     m4a: ['m4a', 'mp4'],
@@ -130,10 +133,9 @@ export function evaluateServerRoute(input: {
     const mismatches: string[] = [];
 
     if (headers) {
-        const expectedSubtypes = source.container
-            ? (MIME_SUBTYPES_BY_CONTAINER[source.container.toLowerCase()] ?? [
-                  source.container.toLowerCase(),
-              ])
+        const normalizedContainer = source.container ? normalizeContainer(source.container) : null;
+        const expectedSubtypes = normalizedContainer
+            ? (MIME_SUBTYPES_BY_CONTAINER[normalizedContainer] ?? [normalizedContainer])
             : null;
         const actualSubtype = mimeSubtype(headers.contentType);
         if (expectedSubtypes && actualSubtype && !expectedSubtypes.includes(actualSubtype)) {
@@ -172,7 +174,10 @@ export function evaluateServerRoute(input: {
     }
 
     if (demuxer?.samplerate !== null && demuxer?.samplerate !== undefined) {
-        if (source.sampleRate !== null && demuxer.samplerate !== source.sampleRate) {
+        if (
+            source.sampleRate !== null &&
+            !isConsistentStreamRate(source.container, source.sampleRate, demuxer.samplerate)
+        ) {
             mismatches.push(
                 `stream rate ${demuxer.samplerate} differs from declared ${source.sampleRate}`,
             );
@@ -230,11 +235,35 @@ export function evaluateServerRoute(input: {
 }
 
 function codecMatchesContainer(codec: string, container: string): boolean {
-    const normalized = container.toLowerCase();
-    if (codec.startsWith('pcm_')) {
+    const normalized = normalizeContainer(container);
+    const loweredCodec = codec.toLowerCase();
+    if (loweredCodec.startsWith('pcm_')) {
         return ['aif', 'aiff', 'w64', 'wav'].includes(normalized);
     }
-    return (CONTAINERS_BY_CODEC[codec] ?? [codec]).includes(normalized);
+    // mpv reports the DSD decoder family (dsd_lsbf, dsd_msbf, *_planar).
+    if (loweredCodec.startsWith('dsd')) {
+        return isDsdContainer(normalized);
+    }
+    return (CONTAINERS_BY_CODEC[loweredCodec] ?? [loweredCodec]).includes(normalized);
+}
+
+/**
+ * A DSD carrier decodes to an x8 PCM rate; that pair is the expected
+ * DSD-to-PCM conversion, not a server-side resample. Accept it in either
+ * direction because servers and demuxers disagree on which side they report.
+ */
+function isConsistentStreamRate(
+    container: null | string,
+    declaredRate: number,
+    demuxerRate: number,
+): boolean {
+    if (declaredRate === demuxerRate) {
+        return true;
+    }
+    return (
+        isDsdContainer(container) &&
+        (isDsdCarrierRate(declaredRate, demuxerRate) || isDsdCarrierRate(demuxerRate, declaredRate))
+    );
 }
 
 // Query params whose values are safe (and useful) in diagnostics output.

@@ -65,6 +65,10 @@ const SEVERITY: Record<AudioEngineEventType, AudioEventSeverity> = {
 
 export interface AudioEventFilter {
     category?: 'all' | AudioEventCategory;
+    /** Resolves the text shown for an event type, so search can match it. */
+    labelFor?: (type: AudioEngineEventType) => string;
+    /** Case-insensitive substring match against the type, label, and detail. */
+    search?: string;
     severity?: 'all' | AudioEventSeverity;
 }
 
@@ -80,6 +84,7 @@ export function filterAudioEvents(
     events: AudioEngineEvent[],
     filter: AudioEventFilter,
 ): AudioEngineEvent[] {
+    const search = filter.search?.trim().toLowerCase() ?? '';
     return events.filter(
         (event) =>
             (!filter.category ||
@@ -87,6 +92,10 @@ export function filterAudioEvents(
                 CATEGORY[event.type] === filter.category) &&
             (!filter.severity ||
                 filter.severity === 'all' ||
-                SEVERITY[event.type] === filter.severity),
+                SEVERITY[event.type] === filter.severity) &&
+            (search.length === 0 ||
+                event.type.toLowerCase().includes(search) ||
+                (filter.labelFor?.(event.type) ?? '').toLowerCase().includes(search) ||
+                (event.detail ?? '').toLowerCase().includes(search)),
     );
 }

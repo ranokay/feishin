@@ -77,4 +77,33 @@ describe('filterAudioEvents', () => {
         const filtered = filterAudioEvents(events, {});
         expect(filtered.map((item) => item.id)).toEqual(events.map((item) => item.id));
     });
+
+    it('searches the event type and detail case-insensitively', () => {
+        expect(filterAudioEvents(events, { search: 'HOG MODE' }).map((item) => item.type)).toEqual([
+            'exclusive-failed',
+        ]);
+        expect(filterAudioEvents(events, { search: 'transcode' }).map((item) => item.type)).toEqual(
+            ['transcode-detected'],
+        );
+    });
+
+    it('searches the localized event label when a resolver is provided', () => {
+        const filtered = filterAudioEvents(events, {
+            labelFor: (type) => (type === 'exclusive-failed' ? 'Exklusiv fehlgeschlagen' : type),
+            search: 'FEHLGESCHLAGEN',
+        });
+
+        expect(filtered.map((item) => item.type)).toEqual(['exclusive-failed']);
+    });
+
+    it('ignores blank search terms and combines search with the other filters', () => {
+        expect(filterAudioEvents(events, { search: '   ' })).toHaveLength(4);
+        expect(
+            filterAudioEvents(events, { category: 'output', search: 'hog' }).map(
+                (item) => item.type,
+            ),
+        ).toEqual(['exclusive-failed']);
+        expect(filterAudioEvents(events, { search: 'hog', severity: 'error' })).toHaveLength(1);
+        expect(filterAudioEvents(events, { search: 'hog', severity: 'warning' })).toHaveLength(0);
+    });
 });

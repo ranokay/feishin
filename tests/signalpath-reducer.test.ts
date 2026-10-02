@@ -28,6 +28,7 @@ function baseSnapshot(overrides: Partial<AudioSnapshot> = {}): AudioSnapshot {
         cacheUnderrun: null,
         decodedParams: { channels: 2, format: 's16', samplerate: 44100 },
         gaplessAudio: 'weak',
+        lastEventId: 0,
         muted: false,
         outputParams: { channels: 2, format: 's32', samplerate: 44100 },
         physicalFormat: null,

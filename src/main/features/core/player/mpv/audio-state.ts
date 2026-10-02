@@ -59,6 +59,12 @@ export interface AudioStateConnection {
 export type { ServerVerificationRequest };
 
 export interface AudioStateServiceOptions {
+    /**
+     * Cross-restart monotonic id source. Without it a new service restarts at
+     * id 1, and an id collision can hide the new log from lastEventId-gated
+     * consumers. The owner seeds one allocator for every service generation.
+     */
+    allocateEventId?: () => number;
     broadcast?: (snapshot: AudioSnapshot) => void;
     eventLimit?: number;
     intervalMs?: number;
@@ -255,7 +261,11 @@ export function createObservedAudioState(): ObservedAudioState {
     };
 }
 
-export function deriveSnapshot(state: ObservedAudioState, sequence: number): AudioSnapshot {
+export function deriveSnapshot(
+    state: ObservedAudioState,
+    sequence: number,
+    lastEventId: number,
+): AudioSnapshot {
     return {
         activeFilters: state.activeFilters,
         aoDriver: state.aoDriver,
@@ -275,6 +285,7 @@ export function deriveSnapshot(state: ObservedAudioState, sequence: number): Aud
         demuxer: state.demuxer,
         gaplessAudio: state.gaplessAudio,
         lastError: state.lastError,
+        lastEventId,
         muted: state.muted,
         outputParams: state.outputParams,
         physicalFormat: state.physicalFormat,
@@ -342,6 +353,7 @@ interface LastServerVerification {
 
 export class AudioStateService {
     private activePlaylistEntryId: null | number = null;
+    private readonly allocateEventId: (() => number) | null;
     private broadcastTimer: NodeJS.Timeout | null = null;
     private readonly connection: AudioStateConnection;
     private disposers: Array<() => void> = [];
@@ -349,6 +361,7 @@ export class AudioStateService {
     private readonly events: AudioEngineEvent[] = [];
     private readonly intervalMs: number;
     private readonly invalidatedStrictProperties = new Set<string>();
+    private lastEventId = 0;
     private lastSequence = 0;
     private lastVerification: LastServerVerification | null = null;
     private readonly log: {
@@ -377,6 +390,7 @@ export class AudioStateService {
 
     constructor(connection: AudioStateConnection, options: AudioStateServiceOptions = {}) {
         this.connection = connection;
+        this.allocateEventId = options.allocateEventId ?? null;
         this.onBroadcast = options.broadcast ?? (() => {});
         this.eventLimit = options.eventLimit ?? DEFAULT_EVENT_LIMIT;
         this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
@@ -388,6 +402,10 @@ export class AudioStateService {
         for (const pin of options.strictPropertyPins ?? []) {
             this.strictPropertyPins.set(pin.name, pin);
         }
+    }
+
+    clearEvents(): void {
+        this.events.length = 0;
     }
 
     dispose(): void {
@@ -414,7 +432,7 @@ export class AudioStateService {
     }
 
     getSnapshot(): AudioSnapshot {
-        return deriveSnapshot(this.state, this.lastSequence);
+        return deriveSnapshot(this.state, this.lastSequence, this.lastEventId);
     }
 
     /**
@@ -675,7 +693,7 @@ export class AudioStateService {
 
     private emitSnapshot(): void {
         this.lastSequence += 1;
-        this.onBroadcast(deriveSnapshot(this.state, this.lastSequence));
+        this.onBroadcast(deriveSnapshot(this.state, this.lastSequence, this.lastEventId));
     }
 
     private handleClose(): void {
@@ -720,8 +738,15 @@ export class AudioStateService {
     }
 
     private pushEvent(event: PendingAudioEngineEvent): void {
-        this.events.push({ ...event, id: this.nextEventId, time: Date.now() });
-        this.nextEventId += 1;
+        let id: number;
+        if (this.allocateEventId) {
+            id = this.allocateEventId();
+        } else {
+            id = this.nextEventId;
+            this.nextEventId += 1;
+        }
+        this.lastEventId = id;
+        this.events.push({ ...event, id, time: Date.now() });
         if (this.events.length > this.eventLimit) {
             this.events.splice(0, this.events.length - this.eventLimit);
         }

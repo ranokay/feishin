@@ -1,11 +1,10 @@
 import type { AudioSnapshot, RetainedStrictPlaybackStopState } from '/@/shared/signalpath';
 
 import isElectron from 'is-electron';
-import { shallow } from 'zustand/shallow';
 import { createWithEqualityFn } from 'zustand/traditional';
 
 import { logger } from '/@/renderer/utils/logger';
-import { retainStrictPlaybackStopState } from '/@/shared/signalpath';
+import { audioSnapshotsEqual, retainStrictPlaybackStopState } from '/@/shared/signalpath';
 
 interface AudioStateActions {
     clearStrictPlaybackStop: () => void;
@@ -60,21 +59,8 @@ if (isElectron()) {
         .catch((error) => logger.warn('Failed to hydrate audio snapshot', { error }));
 }
 
-// sequence/timestamp advance on every broadcast; comparing only signal-bearing
-// fields keeps components idle when observed values did not change.
-const VOLATILE_FIELDS = new Set(['sequence', 'timestamp']);
-
-const selectStableSnapshot = (snapshot: AudioSnapshot | null): AudioSnapshot | null => {
-    if (!snapshot) {
-        return null;
-    }
-    return Object.fromEntries(
-        Object.entries(snapshot).filter(([key]) => !VOLATILE_FIELDS.has(key)),
-    ) as AudioSnapshot;
-};
-
 export const useAudioSnapshot = (): AudioSnapshot | null => {
-    return useAudioStateStore((state) => selectStableSnapshot(state.snapshot), shallow);
+    return useAudioStateStore((state) => state.snapshot, audioSnapshotsEqual);
 };
 
 export const useRetainedStrictPlaybackStop = (): null | RetainedStrictPlaybackStopState => {

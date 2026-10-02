@@ -51,6 +51,15 @@ const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mp
 
 // Observability-only second IPC client. Never routes commands; node-mpv keeps command duty.
 let audioStateService: AudioStateService | null = null;
+// One monotonic id source for every event the main process records (service
+// generations and fallback events), so a lastEventId-gated event log always
+// sees a fresh log as an advance.
+let nextAudioEventId = 1;
+const allocateAudioEventId = () => {
+    const id = nextAudioEventId;
+    nextAudioEventId += 1;
+    return id;
+};
 let audioStateFallbackEvents: AudioEngineEvent[] = [];
 let audioStateFallbackSnapshot: AudioSnapshot | null = null;
 let queuedStreams: Array<MpvLoadSource | undefined> = [];
@@ -77,8 +86,11 @@ const publishStrictObservabilityFailure = () => {
     const detail = 'strict property observability unavailable';
     const state = createObservedAudioState();
     state.strictValidationError = detail;
-    audioStateFallbackSnapshot = deriveSnapshot(state, 1);
-    audioStateFallbackEvents = [{ detail, id: 1, time: Date.now(), type: 'strict-invalidated' }];
+    const eventId = allocateAudioEventId();
+    audioStateFallbackSnapshot = deriveSnapshot(state, 1, eventId);
+    audioStateFallbackEvents = [
+        { detail, id: eventId, time: Date.now(), type: 'strict-invalidated' },
+    ];
     getMainWindow()?.webContents.send('renderer-audio-state-changed', audioStateFallbackSnapshot);
 };
 
@@ -114,6 +126,7 @@ const attachAudioStateService = async (playbackPolicy: PlaybackPolicy = 'standar
             });
         };
         const service = new AudioStateService(connection, {
+            allocateEventId: allocateAudioEventId,
             broadcast: (snapshot) => {
                 if (generation === audioStateGeneration) {
                     const strictStop = resolveStrictPlaybackStop(playbackPolicy, 'local', snapshot);
@@ -820,6 +833,12 @@ ipcMain.handle('player-audio-snapshot', async () => {
 // Bounded audio-engine event log (device/exclusive/rate/filter occurrences)
 ipcMain.handle('player-audio-event-log', async () => {
     return audioStateService?.getEvents() ?? audioStateFallbackEvents;
+});
+
+// Clears the bounded event log without resetting event ids
+ipcMain.handle('player-audio-event-log-clear', async () => {
+    audioStateService?.clearEvents();
+    audioStateFallbackEvents = [];
 });
 
 // Server-route verification for the playing track (headers + demuxer cross-check)

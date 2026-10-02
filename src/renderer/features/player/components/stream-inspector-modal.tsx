@@ -1,25 +1,28 @@
 import dayjs from 'dayjs';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { EvidenceDot, formatServerStage, StageRow } from './signal-path-rows';
 import styles from './stream-inspector-modal.module.css';
 
-import { useAudioSnapshot, useAudioStateStore } from '/@/renderer/store/audio-state.store';
+import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
 import { usePlayerSong } from '/@/renderer/store/player.store';
 import { useEffectivePlaybackPolicy, useSettingsStore } from '/@/renderer/store/settings.store';
 import { logger } from '/@/renderer/utils/logger';
+import { Button } from '/@/shared/components/button/button';
 import { Code } from '/@/shared/components/code/code';
 import { CopyButton } from '/@/shared/components/copy-button/copy-button';
 import { Group } from '/@/shared/components/group/group';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { Select } from '/@/shared/components/select/select';
 import { Stack } from '/@/shared/components/stack/stack';
+import { TextInput } from '/@/shared/components/text-input/text-input';
 import { Text } from '/@/shared/components/text/text';
 import {
     AUDIO_EVENT_CATEGORIES,
     AUDIO_EVENT_SEVERITIES,
     type AudioEngineEvent,
+    type AudioEngineEventType,
     type AudioEventCategory,
     type AudioEventSeverity,
     audioEventSeverity,
@@ -87,23 +90,36 @@ export const StreamInspectorModal = () => {
     const replayGainMode = useSettingsStore((state) => state.playback.mpvProperties.replayGainMode);
     const song = usePlayerSong();
     const snapshot = useAudioSnapshot();
-    // useAudioSnapshot strips volatile fields, so subscribe to the raw
-    // broadcast sequence separately to refresh the query-only event log.
-    const broadcastSequence = useAudioStateStore((state) => state.snapshot?.sequence);
+    // The event log is fetched on demand; snapshot broadcasts that carry no new
+    // event must not trigger an IPC round trip and a re-render.
+    const lastEventId = snapshot?.lastEventId;
 
     const [events, setEvents] = useState<AudioEngineEvent[]>([]);
     const [categoryFilter, setCategoryFilter] = useState<'all' | AudioEventCategory>('all');
     const [severityFilter, setSeverityFilter] = useState<'all' | AudioEventSeverity>('all');
+    const [searchFilter, setSearchFilter] = useState('');
+    const loadGeneration = useRef(0);
 
-    useEffect(() => {
+    const loadEvents = useCallback(() => {
         if (!window.api?.audioState?.getEvents) {
             return;
         }
+        loadGeneration.current += 1;
+        const generation = loadGeneration.current;
         window.api.audioState
             .getEvents()
-            .then(setEvents)
+            .then((next) => {
+                // Discard a response that raced a clear or a newer request.
+                if (generation === loadGeneration.current) {
+                    setEvents(next);
+                }
+            })
             .catch((error) => logger.warn('Failed to load audio engine event log', { error }));
-    }, [broadcastSequence]);
+    }, []);
+
+    useEffect(() => {
+        loadEvents();
+    }, [lastEventId, loadEvents]);
 
     const source = useMemo(
         () =>
@@ -126,6 +142,22 @@ export const StreamInspectorModal = () => {
         [events, policy, replayGainMode, snapshot, source],
     );
 
+    const eventLabel = useCallback(
+        (type: AudioEngineEventType) => t(`player.signalPath_event_${type.replace(/-/g, '_')}`),
+        [t],
+    );
+
+    const filteredEvents = useMemo(
+        () =>
+            filterAudioEvents(events, {
+                category: categoryFilter,
+                labelFor: eventLabel,
+                search: searchFilter,
+                severity: severityFilter,
+            }),
+        [categoryFilter, eventLabel, events, searchFilter, severityFilter],
+    );
+
     if (playbackType !== PlayerType.LOCAL) {
         return (
             <Text c="dim" size="sm">
@@ -134,10 +166,26 @@ export const StreamInspectorModal = () => {
         );
     }
 
-    const filteredEvents = filterAudioEvents(events, {
-        category: categoryFilter,
-        severity: severityFilter,
-    });
+    const clearEvents = () => {
+        if (!window.api?.audioState?.clearEvents) {
+            return;
+        }
+        // Invalidate in-flight fetches: their results predate the clear.
+        loadGeneration.current += 1;
+        const generation = loadGeneration.current;
+        window.api.audioState
+            .clearEvents()
+            .then(() => {
+                if (generation === loadGeneration.current) {
+                    setEvents([]);
+                } else {
+                    // A newer event landed and reloaded the log while the clear
+                    // was in flight; it must not be wiped.
+                    loadEvents();
+                }
+            })
+            .catch((error) => logger.warn('Failed to clear audio engine event log', { error }));
+    };
 
     return (
         <Stack gap="md" w="100%">
@@ -266,6 +314,21 @@ export const StreamInspectorModal = () => {
                         value={severityFilter}
                         w={130}
                     />
+                    <TextInput
+                        onChange={(event) => setSearchFilter(event.currentTarget.value)}
+                        placeholder={t('player.signalPath_searchEvents')}
+                        size="xs"
+                        style={{ flex: 1 }}
+                        value={searchFilter}
+                    />
+                    <Button
+                        disabled={events.length === 0}
+                        onClick={clearEvents}
+                        size="xs"
+                        variant="subtle"
+                    >
+                        {t('player.signalPath_clearEvents')}
+                    </Button>
                 </Group>
                 <ScrollArea style={{ maxHeight: 260 }}>
                     <Stack gap={2}>
@@ -288,7 +351,7 @@ export const StreamInspectorModal = () => {
                                     {dayjs(event.time).format('HH:mm:ss')}
                                 </Text>
                                 <Text size="xs" style={{ flexShrink: 0 }}>
-                                    {t(`player.signalPath_event_${event.type.replace(/-/g, '_')}`)}
+                                    {eventLabel(event.type)}
                                 </Text>
                                 {event.detail && (
                                     <Text c="dim" size="xs" truncate>

@@ -3,6 +3,10 @@ import type { ServerVerificationRequest } from '/@/shared/signalpath/server-rout
 
 import { ipcRenderer } from 'electron';
 
+const clearEvents = (): Promise<void> => {
+    return ipcRenderer.invoke('player-audio-event-log-clear');
+};
+
 const getSnapshot = (): Promise<AudioSnapshot | null> => {
     return ipcRenderer.invoke('player-audio-snapshot');
 };
@@ -24,6 +28,7 @@ const onSnapshotChanged = (callback: (snapshot: AudioSnapshot) => void) => {
 };
 
 export const audioState = {
+    clearEvents,
     getEvents,
     getSnapshot,
     onSnapshotChanged,

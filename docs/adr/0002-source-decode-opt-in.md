@@ -16,6 +16,7 @@ The approved plan (§9, invariant 7) expects the Bit-Perfect `af` chain to stay 
 - An active decode appears in the Signal Path as a `declared-decode` entry with the observed evidence tier. A source-declared pre-emphasis whose de-emphasis option is off shows as `declared not applied` (inferred tier) instead of disappearing.
 - HDCD output is 20-bit. When the observed output format cannot carry 20 bits (for example a forced `s16` output), the Signal Path adds a format-conversion entry; it never presents the truncated expansion as transparent.
 - De-emphasis declaration reads Navidrome's native `tags` (keys normalizing to `preemphasis`, `cdpreemphasis`, `deemphasis`, `cddeemphasis` with a truthy value). Servers that do not surface tags declare nothing; the option can still be enabled manually.
+- The app-managed `af` chain (EQ, compressor, source decode) is authoritative: applying it replaces a custom `--af` supplied through mpv extra parameters, matching the pre-existing EQ behavior. Composing both would require filter ownership labels and is not part of this decision.
 
 ## Consequences
 

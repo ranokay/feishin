@@ -1,8 +1,9 @@
 import type { AnalysisAvailability } from '/@/shared/analysis';
 
-import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import path from 'node:path';
+
+import { runProcess } from './process';
 
 const COMMON_BINARY_DIRS = ['/opt/homebrew/bin', '/usr/local/bin'];
 
@@ -24,12 +25,7 @@ export async function resolveFfmpegBinaries(): Promise<AnalysisAvailability> {
         return { available: false, reason: 'missing-ffprobe' };
     }
 
-    return {
-        available: true,
-        ffmpegPath,
-        ffprobePath,
-        version: await readFfmpegVersion(ffmpegPath),
-    };
+    return { available: true, ffmpegPath, ffprobePath };
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -37,12 +33,6 @@ async function fileExists(filePath: string): Promise<boolean> {
         () => true,
         () => false,
     );
-}
-
-async function readFfmpegVersion(ffmpegPath: string): Promise<null | string> {
-    const result = await runCapture(ffmpegPath, ['-version']);
-    const match = /^ffmpeg version (\S+)/.exec(result.stdout);
-    return match?.[1] ?? null;
 }
 
 async function resolveBinary(name: 'ffmpeg' | 'ffprobe'): Promise<null | string> {
@@ -56,21 +46,6 @@ async function resolveBinary(name: 'ffmpeg' | 'ffprobe'): Promise<null | string>
     return (await runs(name)) ? name : null;
 }
 
-function runCapture(
-    binary: string,
-    args: string[],
-): Promise<{ code: null | number; stdout: string }> {
-    return new Promise((resolve) => {
-        const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'ignore'] });
-        let stdout = '';
-        child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-            stdout += chunk;
-        });
-        child.on('error', () => resolve({ code: null, stdout }));
-        child.on('close', (code) => resolve({ code, stdout }));
-    });
-}
-
 async function runs(binary: string): Promise<boolean> {
-    return (await runCapture(binary, ['-version'])).code === 0;
+    return (await runProcess(binary, ['-version'])).code === 0;
 }

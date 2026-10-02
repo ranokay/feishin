@@ -1,4 +1,4 @@
-import type { FfmpegAstatsOverall, FfmpegEbur128Summary, FfmpegRolloffSummary } from './parse';
+import type { FfmpegAstatsOverall, FfmpegEbur128Summary } from './parse';
 import type {
     AnalysisFinding,
     AnalysisMeasurements,
@@ -8,11 +8,14 @@ import type {
 
 import { ANALYSIS_SCHEMA_VERSION } from './types';
 
+/** dB of dynamic range per integer bit. */
+const DB_PER_BIT = 6.02;
+
 export interface DeriveAnalysisInput {
     analyzedAt: string;
     astats: FfmpegAstatsOverall | null;
     ebur128: FfmpegEbur128Summary | null;
-    rolloff: FfmpegRolloffSummary;
+    rolloffHz: null | number;
     source: AnalysisSourceInfo;
 }
 
@@ -61,7 +64,7 @@ export function classifyAnalysis(
 }
 
 export function deriveAnalysisResult(input: DeriveAnalysisInput): AnalysisResult {
-    const { analyzedAt, astats, ebur128, rolloff, source } = input;
+    const { analyzedAt, astats, ebur128, rolloffHz, source } = input;
     const samplePeakDbfs = astats?.peakLevelDb ?? null;
     const rmsDbfs = astats?.rmsLevelDb ?? null;
     const noiseFloorDbfs = astats?.noiseFloorDb ?? null;
@@ -71,8 +74,7 @@ export function deriveAnalysisResult(input: DeriveAnalysisInput): AnalysisResult
             samplePeakDbfs !== null && rmsDbfs !== null ? samplePeakDbfs - rmsDbfs : null,
         dcOffset: astats?.dcOffset ?? null,
         effectiveBitDepth: effectiveBitDepthFrom(samplePeakDbfs, noiseFloorDbfs),
-        hfExtentHz: rolloff.medianHz,
-        hfExtentP90Hz: rolloff.p90Hz,
+        hfExtentHz: rolloffHz,
         loudnessLufs: ebur128?.integratedLufs ?? null,
         loudnessRangeLu: ebur128?.loudnessRangeLu ?? null,
         noiseFloorDbfs,
@@ -104,9 +106,9 @@ export function effectiveBitDepthFrom(
         return null;
     }
     const dynamicRangeDb = peakLevelDb - noiseFloorDb;
-    if (!Number.isFinite(dynamicRangeDb) || dynamicRangeDb < 6.02) {
+    if (!Number.isFinite(dynamicRangeDb) || dynamicRangeDb < DB_PER_BIT) {
         return null;
     }
 
-    return Math.max(1, Math.min(32, Math.round(dynamicRangeDb / 6.02)));
+    return Math.max(1, Math.min(32, Math.round(dynamicRangeDb / DB_PER_BIT)));
 }

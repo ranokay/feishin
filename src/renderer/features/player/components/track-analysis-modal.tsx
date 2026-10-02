@@ -146,9 +146,11 @@ function AnalysisRow({ entry }: { entry: AnalysisEntry }) {
             <Text c="dim" size="xs" truncate>
                 {entry.song.artistName ?? ''}
             </Text>
-            {entry.status === 'error' && entry.error && (
+            {entry.error && (
                 <Text c="red" size="xs">
-                    {entry.error === 'busy' ? translate('player.analysis_errorBusy') : entry.error}
+                    {entry.error.kind === 'busy'
+                        ? translate('player.analysis_errorBusy')
+                        : entry.error.message}
                 </Text>
             )}
             {entry.result && <AnalysisDetails result={entry.result} />}
@@ -204,7 +206,7 @@ function formatKhz(value: null | number): null | string {
     return value === null ? null : `${(value / 1000).toFixed(1)} kHz`;
 }
 
-export const TrackAnalysisModal = ({ songs }: { songs: Song[] }) => {
+const TrackAnalysisPanel = ({ songs }: { songs: Song[] }) => {
     const { t: translate } = useTranslation();
     const { availability, cancel, entries, finished } = useAnalysisJob(songs);
     const completed = entries.filter((entry) => FINISHED_STATUSES.includes(entry.status)).length;
@@ -252,9 +254,26 @@ export const TrackAnalysisModal = ({ songs }: { songs: Song[] }) => {
     );
 };
 
+/**
+ * Remounts the panel when the analyzed set changes, so reopening with another
+ * track/album (same modal id) cancels the previous queue instead of stacking a
+ * second one the main process would reject as busy.
+ */
+export const TrackAnalysisModal = ({ songs }: { songs: Song[] }) => {
+    const signature = songs
+        .map(
+            (song) =>
+                `${song._serverId}:${song.id}:${song.size}:${song.updatedAt}:${song.createdAt}`,
+        )
+        .join('|');
+
+    return <TrackAnalysisPanel key={signature} songs={songs} />;
+};
+
 export const openTrackAnalysis = (songs: Song[]) => {
     openModal({
         children: <TrackAnalysisModal songs={songs} />,
+        modalId: 'track-analysis',
         size: 'lg',
         title: t('player.analysis_title'),
     });

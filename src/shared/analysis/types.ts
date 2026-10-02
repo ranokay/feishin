@@ -6,7 +6,6 @@ export type AnalysisAvailability =
           available: true;
           ffmpegPath: string;
           ffprobePath: string;
-          version: null | string;
       };
 
 export type AnalysisFinding =
@@ -27,7 +26,6 @@ export interface AnalysisMeasurements {
     dcOffset: null | number;
     effectiveBitDepth: null | number;
     hfExtentHz: null | number;
-    hfExtentP90Hz: null | number;
     loudnessLufs: null | number;
     loudnessRangeLu: null | number;
     noiseFloorDbfs: null | number;
@@ -68,5 +66,4 @@ export interface AnalysisSourceInfo {
     container: null | string;
     durationSec: null | number;
     sampleRate: null | number;
-    sizeBytes: null | number;
 }

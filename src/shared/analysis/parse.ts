@@ -13,12 +13,6 @@ export interface FfmpegEbur128Summary {
     truePeakDbfs: null | number;
 }
 
-export interface FfmpegRolloffSummary {
-    frameCount: number;
-    medianHz: null | number;
-    p90Hz: null | number;
-}
-
 /**
  * The final "Overall" block of one `astats` filter. Per-channel blocks carry
  * the same keys, so only lines after the Overall header are read; `-inf`/`nan`
@@ -94,7 +88,6 @@ export function parseFfprobeJson(text: string): AnalysisSourceInfo | null {
         container: readString(format.format_name),
         durationSec: readNumber(stream.duration) ?? readNumber(format.duration),
         sampleRate: readInt(stream.sample_rate),
-        sizeBytes: readInt(format.size),
     };
 }
 
@@ -115,26 +108,17 @@ export function parseRolloffValues(stdout: string): number[] {
     return values;
 }
 
-/** Median/p90 of the rolloff series stand in for where the HF content ends. */
-export function summarizeRolloff(values: number[]): FfmpegRolloffSummary {
+/** Median rolloff stands in for where the HF content ends. */
+export function summarizeRolloff(values: number[]): null | number {
     if (values.length === 0) {
-        return { frameCount: 0, medianHz: null, p90Hz: null };
+        return null;
     }
     const sorted = [...values].sort((a, b) => a - b);
-
-    return {
-        frameCount: sorted.length,
-        medianHz: percentile(sorted, 0.5),
-        p90Hz: percentile(sorted, 0.9),
-    };
+    return sorted[Math.min(sorted.length - 1, Math.floor(0.5 * sorted.length))];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function percentile(sorted: number[], fraction: number): number {
-    return sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))];
 }
 
 function readInt(value: unknown): null | number {

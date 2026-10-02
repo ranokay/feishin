@@ -1,13 +1,14 @@
 import type { AnalysisAvailability, AnalysisRequest, AnalysisResponse } from '/@/shared/analysis';
 
 import { net } from 'electron';
-import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+
+import { runProcess } from './process';
 
 import log from '/@/main/logger';
 import {
@@ -20,12 +21,6 @@ import {
     parseRolloffValues,
     summarizeRolloff,
 } from '/@/shared/analysis';
-
-interface ProcessResult {
-    code: null | number;
-    stderr: string;
-    stdout: string;
-}
 
 /**
  * One offline analysis run: download the raw stream to a temp file, sanity
@@ -78,7 +73,7 @@ export async function runTrackAnalysis(
             analyzedAt: new Date().toISOString(),
             astats: parseAstatsOverall(stats.stderr),
             ebur128: parseEbur128Summary(stats.stderr),
-            rolloff: summarizeRolloff(parseRolloffValues(stats.stdout)),
+            rolloffHz: summarizeRolloff(parseRolloffValues(stats.stdout)),
             source,
         });
         log.info('analysis finished', {
@@ -120,20 +115,4 @@ async function downloadToFile(url: string, filePath: string, signal: AbortSignal
         Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
         createWriteStream(filePath),
     );
-}
-
-function runProcess(binary: string, args: string[], signal: AbortSignal): Promise<ProcessResult> {
-    return new Promise((resolve, reject) => {
-        const child = spawn(binary, args, { signal, stdio: ['ignore', 'pipe', 'pipe'] });
-        let stdout = '';
-        let stderr = '';
-        child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-            stdout += chunk;
-        });
-        child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-            stderr += chunk;
-        });
-        child.on('error', reject);
-        child.on('close', (code) => resolve({ code, stderr, stdout }));
-    });
 }

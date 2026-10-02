@@ -11,11 +11,13 @@ import { analysisCacheKey } from '/@/shared/analysis';
 
 export interface AnalysisEntry {
     cacheKey: string;
-    error?: string;
+    error?: AnalysisEntryError;
     result?: AnalysisResult;
     song: Song;
     status: AnalysisEntryStatus;
 }
+
+export type AnalysisEntryError = { kind: 'busy' } | { kind: 'failed'; message: string };
 
 export type AnalysisEntryStatus =
     | 'cached'
@@ -50,6 +52,7 @@ export function useAnalysisJob(songs: Song[]): AnalysisJobResult {
         const list: AnalysisTarget[] = [];
         for (const song of songs) {
             const cacheKey = analysisCacheKey({
+                createdAt: song.createdAt,
                 serverId: song._serverId,
                 size: song.size,
                 songId: song.id,
@@ -142,7 +145,7 @@ export function useAnalysisJob(songs: Song[]): AnalysisJobResult {
                     if (response.status === 'ok') {
                         await setCachedAnalysis(cacheKey, response.result);
                         patchEntry(cacheKey, { result: response.result, status: 'done' });
-                    } else if (response.status === 'cancelled') {
+                    } else if (stopRef.current || response.status === 'cancelled') {
                         patchEntry(cacheKey, { status: 'cancelled' });
                         break;
                     } else if (response.status === 'unavailable') {
@@ -151,17 +154,27 @@ export function useAnalysisJob(songs: Song[]): AnalysisJobResult {
                         patchPending('unavailable');
                         break;
                     } else if (response.status === 'busy') {
-                        patchEntry(cacheKey, { error: 'busy', status: 'error' });
+                        patchEntry(cacheKey, { error: { kind: 'busy' }, status: 'error' });
                     } else {
-                        patchEntry(cacheKey, { error: response.message, status: 'error' });
+                        patchEntry(cacheKey, {
+                            error: { kind: 'failed', message: response.message },
+                            status: 'error',
+                        });
                     }
                 } catch (error) {
                     if (disposed) {
                         return;
                     }
-                    logger.warn('Analysis run failed', { error: String(error) });
+                    if (stopRef.current) {
+                        patchEntry(cacheKey, { status: 'cancelled' });
+                        break;
+                    }
+                    logger.warn('Analysis run failed', { error });
                     patchEntry(cacheKey, {
-                        error: error instanceof Error ? error.message : 'analysis failed',
+                        error: {
+                            kind: 'failed',
+                            message: error instanceof Error ? error.message : 'analysis failed',
+                        },
                         status: 'error',
                     });
                 }

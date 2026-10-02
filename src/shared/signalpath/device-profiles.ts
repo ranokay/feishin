@@ -46,6 +46,11 @@ const MPV_DEFAULT_DEVICE_ID = 'auto';
 // entry; persisted payloads are untrusted, so drop them.
 const PROTOTYPE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
+export interface DeviceDescriptionEntry {
+    description?: null | string;
+    value: string;
+}
+
 export function normalizeDeviceDescription(value: null | string | undefined): null | string {
     const normalized = value?.trim().replace(/\s+/g, ' ').toLowerCase();
     return normalized ? normalized : null;
@@ -86,6 +91,31 @@ export function normalizeDeviceProfiles(value: unknown): DeviceProfileMap {
 
 export function normalizeMpvDeviceId(deviceId: null | string | undefined): string {
     return deviceId?.trim() || MPV_DEFAULT_DEVICE_ID;
+}
+
+/**
+ * The description to refresh a selected device with from an enumerated device
+ * list. Returns null when there is nothing to write: no selection, the device
+ * is not in the list (unplugged), the live entry has no description, or the
+ * stored description already matches.
+ *
+ * `mpvAudioDeviceDescription` is both the profile description fallback and an
+ * Auto classification input, so installs that picked a device before
+ * descriptions were persisted stay stale until an enumeration refreshes it.
+ */
+export function resolveLiveDeviceDescription(
+    devices: readonly DeviceDescriptionEntry[],
+    deviceId: null | string | undefined,
+    storedDescription: null | string | undefined,
+): null | string {
+    if (!deviceId) {
+        return null;
+    }
+    const live = devices.find((device) => device.value === deviceId)?.description?.trim();
+    if (!live || live === storedDescription) {
+        return null;
+    }
+    return live;
 }
 
 // Device-class keyword sets for the Auto ("Best Quality") heuristic. Matching is

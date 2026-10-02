@@ -11,6 +11,7 @@ import {
     resolveDeviceProfile,
     resolveEffectivePlaybackPolicy,
     resolveEffectivePlaybackPolicyDecision,
+    resolveLiveDeviceDescription,
 } from '../src/shared/signalpath';
 
 const profile = (
@@ -416,6 +417,42 @@ describe('resolveEffectivePlaybackPolicyDecision', () => {
                 'MacBook Pro Speakers',
             ),
         ).toEqual({ auto: null, policy: 'bit-perfect' });
+    });
+});
+
+describe('resolveLiveDeviceDescription', () => {
+    const devices = [
+        { description: 'USB DAC', value: 'coreaudio/usb-dac' },
+        { description: undefined, value: 'coreaudio/unknown' },
+        { description: '   ', value: 'coreaudio/blank' },
+    ];
+
+    it('returns the live description for the selected device', () => {
+        expect(resolveLiveDeviceDescription(devices, 'coreaudio/usb-dac', null)).toBe('USB DAC');
+    });
+
+    it('returns the live description when the stored one is stale', () => {
+        expect(resolveLiveDeviceDescription(devices, 'coreaudio/usb-dac', 'Old speakers')).toBe(
+            'USB DAC',
+        );
+    });
+
+    it('returns null when nothing changed', () => {
+        expect(resolveLiveDeviceDescription(devices, 'coreaudio/usb-dac', 'USB DAC')).toBeNull();
+    });
+
+    it('returns null when the selected device is not in the live list', () => {
+        expect(resolveLiveDeviceDescription(devices, 'coreaudio/gone', null)).toBeNull();
+    });
+
+    it('keeps the stored description when the live one is missing or blank', () => {
+        expect(resolveLiveDeviceDescription(devices, 'coreaudio/unknown', 'Stored')).toBeNull();
+        expect(resolveLiveDeviceDescription(devices, 'coreaudio/blank', 'Stored')).toBeNull();
+    });
+
+    it('returns null without a selected device id', () => {
+        expect(resolveLiveDeviceDescription(devices, undefined, 'Stored')).toBeNull();
+        expect(resolveLiveDeviceDescription(devices, '', 'Stored')).toBeNull();
     });
 });
 

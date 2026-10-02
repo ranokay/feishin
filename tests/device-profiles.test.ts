@@ -265,6 +265,18 @@ describe('resolveAutoDevicePolicy', () => {
             name: 'a DAC named only by its label',
         },
         {
+            description: null,
+            deviceId: USB_DAC_ID,
+            expected: { level: 'inferred', policy: 'exclusive', reason: 'external-device' },
+            name: 'a USB audio class id without a stored description',
+        },
+        {
+            description: 'Medac Reference Speakers',
+            deviceId: 'wasapi/{guid}',
+            expected: { level: 'unknown', policy: 'standard', reason: 'unknown-device' },
+            name: 'a label word that merely contains the letters dac',
+        },
+        {
             description: 'Speakers (High Definition Audio)',
             deviceId: 'wasapi/{0.0.0.00000000}.{dac4e1b2-0000-0000-0000-000000000000}',
             expected: { level: 'unknown', policy: 'standard', reason: 'unknown-device' },

@@ -118,9 +118,10 @@ const BUILT_IN_DEVICE_PATTERNS = [
 const EXTERNAL_DEVICE_PATTERNS = ['audio interface', 'usb'];
 
 // 'dac' is all hex digits, and WASAPI device ids are opaque hex GUIDs, so a
-// random endpoint id can contain it by chance. It only counts as a full label
-// token instead of a substring of the id.
-const EXTERNAL_LABEL_PATTERNS = ['dac'];
+// random endpoint id can contain it by chance. It only counts as a standalone
+// label word ("USB DAC", "DAC/amp"), never as a substring of an id or of a
+// longer label word.
+const EXTERNAL_DAC_LABEL_PATTERN = /\bdac\b/;
 
 /**
  * Conservative device-class heuristic behind the Auto ("Best Quality")
@@ -134,10 +135,10 @@ const EXTERNAL_LABEL_PATTERNS = ['dac'];
  *    virtual device named "USB ..." stays standard.
  * 2. Wireless/streaming endpoints (Bluetooth, AirPlay, AirPods, Wi-Fi) - standard.
  * 3. External audio (USB or "audio interface" tokens in the id or description,
- *    "dac" only as a label token) - exclusive. Nothing else proves external: an
- *    ALSA `hw:` id can be either a USB DAC or the built-in codec (e.g.
- *    `alsa/hw:CARD=PCH,DEV=0` is a laptop's HDA Intel), and a WASAPI GUID can
- *    contain "dac" by chance, so both stay unrecognized rather than guessing.
+ *    "dac" only as a standalone label word) - exclusive. Nothing else proves
+ *    external: an ALSA `hw:` id can be either a USB DAC or the built-in codec
+ *    (e.g. `alsa/hw:CARD=PCH,DEV=0` is a laptop's HDA Intel), and a WASAPI GUID
+ *    can contain "dac" by chance, so both stay unrecognized rather than guessing.
  * 4. Built-in host audio (AppleHDA, BuiltIn, MacBook/iMac, internal, Realtek,
  *    the built-in speaker id) - standard.
  * 5. No match, or no explicit device selected (mpv `auto`) - standard.
@@ -156,7 +157,7 @@ export function resolveAutoDevicePolicy(
     }
 
     const label = (description ?? '').toLowerCase();
-    const facts = `${deviceId ?? ''} ${label}`;
+    const facts = `${deviceId ?? ''} ${label}`.toLowerCase();
     if (matchesDevicePattern(facts, VIRTUAL_DEVICE_PATTERNS)) {
         return { level: 'inferred', policy: 'standard', reason: 'virtual-device' };
     }
@@ -165,7 +166,7 @@ export function resolveAutoDevicePolicy(
     }
     if (
         matchesDevicePattern(facts, EXTERNAL_DEVICE_PATTERNS) ||
-        matchesDevicePattern(label, EXTERNAL_LABEL_PATTERNS)
+        EXTERNAL_DAC_LABEL_PATTERN.test(label)
     ) {
         return { level: 'inferred', policy: 'exclusive', reason: 'external-device' };
     }

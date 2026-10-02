@@ -5,7 +5,11 @@ import path from 'node:path';
 import type { FixtureSpec } from '../fixtures/audio-fixtures';
 
 import { runProcess } from '../../src/main/features/core/analysis/process';
-import { policyStartupConfig } from '../../src/shared/signalpath';
+import {
+    BIT_PERFECT_PROPERTY_PINS,
+    findStrictPropertyViolation,
+    policyStartupConfig,
+} from '../../src/shared/signalpath';
 import { writeFlacFixture, writeWavFixture } from '../fixtures/audio-fixtures';
 import { MpvTestProcess } from './mpv-test-process';
 
@@ -156,9 +160,11 @@ function toHex(byte: number): string {
 const SENSITIVITY_AF = 'equalizer=f=1000:t=q:w=1:g=6';
 const SENSITIVITY_CELL_KEY = 'wav-24-96000';
 
-// Conflicting values the strict pins must override. A fresh mpv already
-// defaults to transparent behavior, so seeding this baseline first is what
-// makes the matrix fail if a pin stops being applied.
+// Conflicting values seeded before the strict pins. A fresh mpv already
+// defaults to transparent behavior, so without this the matrix would still
+// pass if a pin stopped being applied. Pin application is also read back
+// through the shared violation checker, which covers pins the render cannot
+// observe on a single untagged track (replaygain).
 const NON_TRANSPARENT_BASELINE: Record<string, unknown> = {
     af: 'equalizer=f=500:t=q:w=1:g=3',
     'audio-samplerate': 48000,
@@ -172,8 +178,9 @@ const NON_TRANSPARENT_BASELINE: Record<string, unknown> = {
  * Software bit-transparency self-test: renders every matrix cell through a
  * strict-configured mpv (`--ao=pcm`) and byte-compares it against an ffmpeg
  * reference decode of the same fixture. Hardware stays out of the loop; a
- * seeded non-transparent baseline must be neutralized by the strict pins, and
- * an EQ-injected render proves the comparison is sensitive to chain changes.
+ * seeded non-transparent baseline must be neutralized by the strict pins
+ * (which are also read back), and an EQ-injected render proves the comparison
+ * is sensitive to chain changes.
  */
 export async function runBitTransparencySelfTest(
     input: BitTransparencySelfTestInput,
@@ -306,6 +313,14 @@ async function renderFixture(options: {
         }
         for (const [name, value] of Object.entries(runtimeProperties)) {
             await mpv.setProperty(name, value);
+        }
+        for (const pin of BIT_PERFECT_PROPERTY_PINS) {
+            const violation = findStrictPropertyViolation(pin, await mpv.getProperty(pin.name));
+            if (violation !== null) {
+                throw new Error(
+                    `strict pin ${pin.name} is not in effect after configuration: ${violation.actual}`,
+                );
+            }
         }
         if (options.af) {
             await mpv.setProperty('af', options.af);

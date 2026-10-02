@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    type AutoDevicePolicyDecision,
     type DeviceProfileMap,
     normalizeDeviceDescription,
     normalizeDeviceProfiles,
     normalizeMpvDeviceId,
     type PlaybackPolicy,
+    resolveAutoDevicePolicy,
     resolveDeviceProfile,
     resolveEffectivePlaybackPolicy,
+    resolveEffectivePlaybackPolicyDecision,
 } from '../src/shared/signalpath';
 
 const profile = (
@@ -195,6 +198,189 @@ describe('resolveEffectivePlaybackPolicy', () => {
                 'MacBook Pro Speakers',
             ),
         ).toBe('standard');
+    });
+
+    it('resolves the auto selection to the device-class policy', () => {
+        expect(resolveEffectivePlaybackPolicy('auto', {}, USB_DAC_ID, USB_DAC_DESCRIPTION)).toBe(
+            'exclusive',
+        );
+        expect(
+            resolveEffectivePlaybackPolicy(
+                'auto',
+                {},
+                'wasapi/{guid}',
+                'Speakers (High Definition Audio)',
+            ),
+        ).toBe('standard');
+    });
+});
+
+describe('resolveAutoDevicePolicy', () => {
+    const CASES: {
+        description: null | string;
+        deviceId: null | string | undefined;
+        expected: AutoDevicePolicyDecision;
+        name: string;
+    }[] = [
+        {
+            description: 'USB DAC',
+            deviceId: USB_DAC_ID,
+            expected: { level: 'inferred', policy: 'exclusive', reason: 'external-device' },
+            name: 'a USB audio class device on coreaudio',
+        },
+        {
+            description: 'Topping E30 USB DAC',
+            deviceId: 'wasapi/{guid}',
+            expected: { level: 'inferred', policy: 'exclusive', reason: 'external-device' },
+            name: 'a USB DAC described only by name on wasapi',
+        },
+        {
+            description: 'Audio',
+            deviceId: 'alsa/hw:CARD=Audio,DEV=0',
+            expected: { level: 'inferred', policy: 'exclusive', reason: 'external-device' },
+            name: 'an ALSA hw device',
+        },
+        {
+            description: 'MacBook Pro Speakers',
+            deviceId: 'coreaudio/BuiltInSpeakerDevice',
+            expected: { level: 'inferred', policy: 'standard', reason: 'built-in-device' },
+            name: 'the built-in speakers',
+        },
+        {
+            description: 'AirPods Pro',
+            deviceId: 'coreaudio/AirPods Pro',
+            expected: { level: 'inferred', policy: 'standard', reason: 'wireless-device' },
+            name: 'AirPods',
+        },
+        {
+            description: 'Bluetooth Speaker',
+            deviceId: 'wasapi/{guid}',
+            expected: { level: 'inferred', policy: 'standard', reason: 'wireless-device' },
+            name: 'a Bluetooth endpoint',
+        },
+        {
+            description: 'BlackHole 2ch',
+            deviceId: 'coreaudio/BlackHole 2ch',
+            expected: { level: 'inferred', policy: 'standard', reason: 'virtual-device' },
+            name: 'a virtual loopback device',
+        },
+        {
+            description: 'Speakers (High Definition Audio)',
+            deviceId: 'wasapi/{guid}',
+            expected: { level: 'unknown', policy: 'standard', reason: 'unknown-device' },
+            name: 'an unclassifiable device',
+        },
+        {
+            description: 'Autoselect device',
+            deviceId: undefined,
+            expected: { level: 'unknown', policy: 'standard', reason: 'no-device' },
+            name: 'no explicit device selection',
+        },
+        {
+            description: 'Autoselect device',
+            deviceId: 'auto',
+            expected: { level: 'unknown', policy: 'standard', reason: 'no-device' },
+            name: 'the mpv auto device',
+        },
+    ];
+
+    it.each(CASES)('classifies $name', ({ description, deviceId, expected }) => {
+        expect(resolveAutoDevicePolicy(deviceId, description)).toEqual(expected);
+    });
+
+    it('never selects strict enforcement (Bit-Perfect), whatever the device', () => {
+        for (const testCase of CASES) {
+            expect(
+                resolveAutoDevicePolicy(testCase.deviceId, testCase.description).policy,
+            ).not.toBe('bit-perfect');
+        }
+    });
+
+    it('lets an exclusion win over a positive external match', () => {
+        expect(resolveAutoDevicePolicy('coreaudio/BlackHole 2ch USB', 'BlackHole 2ch USB')).toEqual(
+            {
+                level: 'inferred',
+                policy: 'standard',
+                reason: 'virtual-device',
+            },
+        );
+        expect(resolveAutoDevicePolicy(USB_DAC_ID, 'Bluetooth USB DAC')).toEqual({
+            level: 'inferred',
+            policy: 'standard',
+            reason: 'wireless-device',
+        });
+    });
+});
+
+describe('resolveEffectivePlaybackPolicyDecision', () => {
+    it('reports a concrete global policy without an auto decision', () => {
+        expect(
+            resolveEffectivePlaybackPolicyDecision(
+                'exclusive',
+                {},
+                USB_DAC_ID,
+                USB_DAC_DESCRIPTION,
+            ),
+        ).toEqual({ auto: null, policy: 'exclusive', selection: 'exclusive' });
+    });
+
+    it('resolves an auto global for the selected device', () => {
+        expect(
+            resolveEffectivePlaybackPolicyDecision('auto', {}, USB_DAC_ID, USB_DAC_DESCRIPTION),
+        ).toEqual({
+            auto: { level: 'inferred', policy: 'exclusive', reason: 'external-device' },
+            policy: 'exclusive',
+            selection: 'auto',
+        });
+    });
+
+    it('resolves auto to standard for built-in and unrecognized devices', () => {
+        expect(
+            resolveEffectivePlaybackPolicyDecision(
+                'auto',
+                {},
+                'coreaudio/BuiltInSpeakerDevice',
+                'MacBook Pro Speakers',
+            ).policy,
+        ).toBe('standard');
+        expect(
+            resolveEffectivePlaybackPolicyDecision(
+                'auto',
+                {},
+                'wasapi/{guid}',
+                'Speakers (High Definition Audio)',
+            ).policy,
+        ).toBe('standard');
+    });
+
+    it('lets an explicit profile beat auto for the same device', () => {
+        const profiles: DeviceProfileMap = {
+            [USB_DAC_ID]: profile(USB_DAC_DESCRIPTION, 'standard'),
+        };
+
+        expect(
+            resolveEffectivePlaybackPolicyDecision(
+                'auto',
+                profiles,
+                USB_DAC_ID,
+                USB_DAC_DESCRIPTION,
+            ),
+        ).toEqual({ auto: null, policy: 'standard', selection: 'standard' });
+    });
+
+    it('lets a profile opt a built-in device into strict enforcement', () => {
+        const profiles: DeviceProfileMap = {
+            'coreaudio/builtin': profile('MacBook Pro Speakers', 'bit-perfect'),
+        };
+
+        expect(
+            resolveEffectivePlaybackPolicyDecision(
+                'auto',
+                profiles,
+                'coreaudio/builtin',
+                'MacBook Pro Speakers',
+            ),
+        ).toEqual({ auto: null, policy: 'bit-perfect', selection: 'bit-perfect' });
     });
 });
 

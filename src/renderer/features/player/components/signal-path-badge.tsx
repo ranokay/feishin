@@ -10,6 +10,7 @@ import { getMpvAudioDevices } from '/@/renderer/features/settings/components/pla
 import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
 import { usePlayerSong, usePlayerStore } from '/@/renderer/store/player.store';
 import {
+    resolvePlaybackPolicyDecisionForSettings,
     useEffectivePlaybackPolicy,
     usePlaybackSettings,
     useSettingsStore,
@@ -21,12 +22,14 @@ import { Popover } from '/@/shared/components/popover/popover';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import {
+    type AutoDevicePolicyReason,
     buildSignalPathModel,
     type ConfidenceLevel,
     declareSource,
     type IntegrityStatus,
     isExclusiveRoute,
     normalizeMpvDeviceId,
+    type PlaybackPolicy,
     type ProcessingEntry,
     resolveDeviceProfile,
 } from '/@/shared/signalpath';
@@ -80,6 +83,21 @@ const DSP_KEY: Record<ProcessingEntry['kind'], string> = {
     replaygain: 'dspReplaygain',
     resample: 'dspResample',
     tempo: 'dspTempo',
+};
+
+const POLICY_LABEL_SUFFIX: Record<PlaybackPolicy, string> = {
+    'bit-perfect': 'BitPerfect',
+    exclusive: 'Exclusive',
+    standard: 'Standard',
+};
+
+const AUTO_REASON_KEY: Record<AutoDevicePolicyReason, string> = {
+    'built-in-device': 'autoReasonBuiltIn',
+    'external-device': 'autoReasonExternal',
+    'no-device': 'autoReasonNoDevice',
+    'unknown-device': 'autoReasonUnknown',
+    'virtual-device': 'autoReasonVirtual',
+    'wireless-device': 'autoReasonWireless',
 };
 
 const ProcessingRow = ({
@@ -177,6 +195,11 @@ export const SignalPathBadge = () => {
         [policy, playbackSettings.sourceDecode, replayGainMode, snapshot, source],
     );
 
+    const policyDecision = useMemo(
+        () => resolvePlaybackPolicyDecisionForSettings(playbackSettings),
+        [playbackSettings],
+    );
+
     // Only the local mpv engine has a signal path to describe, and a stopped
     // player would keep showing the previous track's verdict indefinitely.
     if (playbackType !== PlayerType.LOCAL || !song || playerStatus === PlayerStatus.STOPPED) {
@@ -213,6 +236,24 @@ export const SignalPathBadge = () => {
                     <Text fw={600} size="sm">
                         {t('player.signalPath')}
                     </Text>
+                    {policyDecision.auto && (
+                        <StageRow
+                            item={{
+                                detail: `${t(
+                                    `setting.playbackPolicy_option${
+                                        POLICY_LABEL_SUFFIX[policyDecision.auto.policy]
+                                    }`,
+                                )} - ${t(
+                                    `player.signalPath_${
+                                        AUTO_REASON_KEY[policyDecision.auto.reason]
+                                    }`,
+                                )}`,
+                                level: policyDecision.auto.level,
+                                value: null,
+                            }}
+                            label={t('player.signalPath_policyAuto')}
+                        />
+                    )}
                     <StageRow item={model.source} label={t('player.signalPath_stageSource')} />
                     <StageRow
                         item={{

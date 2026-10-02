@@ -35,9 +35,11 @@ import {
     normalizeBitPerfectMuteBehavior,
     normalizeDeviceProfiles,
     normalizePlaybackPolicy,
+    normalizePlaybackPolicySelection,
     normalizeSourceDecodeOptions,
     PLAYBACK_POLICIES,
-    resolveEffectivePlaybackPolicy,
+    PLAYBACK_POLICY_SELECTIONS,
+    resolveEffectivePlaybackPolicyDecision,
 } from '/@/shared/signalpath';
 import { AppTheme } from '/@/shared/themes/app-theme-types';
 import { LibraryItem, LyricSource, SavedCollection } from '/@/shared/types/domain-types';
@@ -740,7 +742,7 @@ const PlaybackSettingsSchema = z.object({
     mpvAudioDeviceId: z.string().nullable().optional(),
     mpvExtraParameters: z.array(z.string()),
     mpvProperties: MpvSettingsSchema,
-    playbackPolicy: z.enum([...PLAYBACK_POLICIES]),
+    playbackPolicy: z.enum([...PLAYBACK_POLICY_SELECTIONS]),
     preservePitch: z.boolean(),
     previousLocalVolume: z.number().min(0).max(100).optional(),
     previousPlayerType: z.nativeEnum(PlayerType).optional(),
@@ -3009,10 +3011,18 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
+                if (version < 39) {
+                    if (state.playback) {
+                        state.playback.playbackPolicy = normalizePlaybackPolicySelection(
+                            state.playback.playbackPolicy,
+                        );
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 38,
+            version: 39,
         },
     ),
 );
@@ -3022,20 +3032,29 @@ export const useSettingsStoreActions = () => useSettingsStore((state) => state.a
 export const usePlaybackSettings = () => useSettingsStore((state) => state.playback, shallow);
 
 /**
- * The global policy, overridden by the selected mpv device's profile. Every
+ * The global selection, overridden by the selected mpv device's profile and
+ * resolved to a concrete policy (Auto runs the device-class heuristic). Every
  * behavioral gate (strict controls, startup config, volume lock) reads this;
  * only the settings UI edits the global policy directly.
  */
 export const useEffectivePlaybackPolicy = () =>
     useSettingsStore((state) => resolvePlaybackPolicyForSettings(state.playback));
 
-export const resolvePlaybackPolicyForSettings = (playback: SettingsState['playback']) =>
-    resolveEffectivePlaybackPolicy(
+/**
+ * The full effective-policy decision, including the Auto explanation. Only the
+ * Signal Path disclosure needs this; gates keep using the concrete policy
+ * above.
+ */
+export const resolvePlaybackPolicyDecisionForSettings = (playback: SettingsState['playback']) =>
+    resolveEffectivePlaybackPolicyDecision(
         playback.playbackPolicy,
         playback.deviceProfiles,
         playback.mpvAudioDeviceId,
         playback.mpvAudioDeviceDescription,
     );
+
+export const resolvePlaybackPolicyForSettings = (playback: SettingsState['playback']) =>
+    resolvePlaybackPolicyDecisionForSettings(playback).policy;
 
 export const useTableSettings = (type: ItemListKey) =>
     useSettingsStore((state) => state.lists[type as keyof typeof state.lists]);

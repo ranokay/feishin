@@ -5,14 +5,17 @@ import {
     type DeviceProfileMap,
     normalizeDeviceProfiles,
     normalizePlaybackPolicy,
+    normalizePlaybackPolicySelection,
     normalizeSourceDecodeOptions,
     PLAYBACK_POLICIES,
+    PLAYBACK_POLICY_SELECTIONS,
     type PlaybackPolicy,
+    type PlaybackPolicySelection,
     type SourceDecodeOptions,
 } from '../src/shared/signalpath';
 
 const PlaybackPolicySchema = z.object({
-    playbackPolicy: z.enum([...PLAYBACK_POLICIES]),
+    playbackPolicy: z.enum([...PLAYBACK_POLICY_SELECTIONS]),
 });
 
 // Mirrors the store migration block for persisted settings version < 34.
@@ -55,10 +58,23 @@ describe('normalizePlaybackPolicy', () => {
     );
 });
 
+describe('normalizePlaybackPolicySelection', () => {
+    it.each(PLAYBACK_POLICY_SELECTIONS)('passes through the valid selection %s', (selection) => {
+        expect(normalizePlaybackPolicySelection(selection)).toBe(selection);
+    });
+
+    it.each([undefined, null, 42, {}, 'hifi', 'auto-mode', 'AUTO'])(
+        'coerces invalid selection %s to standard',
+        (value) => {
+            expect(normalizePlaybackPolicySelection(value)).toBe('standard');
+        },
+    );
+});
+
 describe('playback policy settings schema parsing', () => {
-    it('accepts every declared policy preset', () => {
-        for (const policy of PLAYBACK_POLICIES) {
-            const result = PlaybackPolicySchema.safeParse({ playbackPolicy: policy });
+    it('accepts every declared policy selection', () => {
+        for (const selection of PLAYBACK_POLICY_SELECTIONS) {
+            const result = PlaybackPolicySchema.safeParse({ playbackPolicy: selection });
             expect(result.success).toBe(true);
         }
     });
@@ -66,6 +82,35 @@ describe('playback policy settings schema parsing', () => {
     it('rejects undeclared presets instead of silently coercing them on import', () => {
         const result = PlaybackPolicySchema.safeParse({ playbackPolicy: 'ultra' });
         expect(result.success).toBe(false);
+    });
+});
+
+// Mirrors the store migration block for persisted settings version < 39.
+const migratePlaybackPolicySelection = (persisted: {
+    playback?: { playbackPolicy?: unknown };
+}): { playback: { playbackPolicy: PlaybackPolicySelection } } => ({
+    playback: {
+        playbackPolicy: normalizePlaybackPolicySelection(persisted.playback?.playbackPolicy),
+    },
+});
+
+describe('persisted playback policy selection migration', () => {
+    it('preserves the auto selection across migration', () => {
+        expect(
+            migratePlaybackPolicySelection({ playback: { playbackPolicy: 'auto' } }).playback
+                .playbackPolicy,
+        ).toBe('auto');
+    });
+
+    it('resets corrupted persisted selections back to standard', () => {
+        expect(
+            migratePlaybackPolicySelection({ playback: { playbackPolicy: 'hifi' } }).playback
+                .playbackPolicy,
+        ).toBe('standard');
+    });
+
+    it('tolerates missing playback sections', () => {
+        expect(migratePlaybackPolicySelection({}).playback.playbackPolicy).toBe('standard');
     });
 });
 

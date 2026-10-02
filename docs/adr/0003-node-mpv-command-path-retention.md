@@ -32,7 +32,7 @@ Revisit when any of these is true:
 - The pinned tarball stops installing.
 - The player module is overhauled for another reason, so the extra migration risk is marginal.
 
-If a trigger fires, migrate expand-contract: extend the owned client with spawn and command parity, shadow-verify commands while node-mpv keeps duty, cut over command ownership, then delete node-mpv and the workarounds listed above (private-field kills, quit timeout race, `playlist-pos` end-of-track inference, errcode mapping). Create the follow-up tickets at that point, one phase each.
+If a trigger fires, migrate expand-contract: extend the owned client with spawn and command parity, run a shadow phase that compares read-only requests and serialized command shapes without replaying mutating commands, cut whole command classes over atomically, then delete node-mpv and the workarounds listed above (private-field kills, quit timeout race, `playlist-pos` end-of-track inference, errcode mapping). Create the follow-up tickets at that point, one phase each.
 
 ## Consequences
 

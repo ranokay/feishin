@@ -156,11 +156,24 @@ function toHex(byte: number): string {
 const SENSITIVITY_AF = 'equalizer=f=1000:t=q:w=1:g=6';
 const SENSITIVITY_CELL_KEY = 'wav-24-96000';
 
+// Conflicting values the strict pins must override. A fresh mpv already
+// defaults to transparent behavior, so seeding this baseline first is what
+// makes the matrix fail if a pin stops being applied.
+const NON_TRANSPARENT_BASELINE: Record<string, unknown> = {
+    af: 'equalizer=f=500:t=q:w=1:g=3',
+    'audio-samplerate': 48000,
+    'gapless-audio': 'yes',
+    replaygain: 'track',
+    speed: 1.25,
+    volume: 50,
+};
+
 /**
  * Software bit-transparency self-test: renders every matrix cell through a
  * strict-configured mpv (`--ao=pcm`) and byte-compares it against an ffmpeg
- * reference decode of the same fixture. Hardware stays out of the loop, and an
- * EQ-injected render proves the comparison is sensitive to chain alterations.
+ * reference decode of the same fixture. Hardware stays out of the loop; a
+ * seeded non-transparent baseline must be neutralized by the strict pins, and
+ * an EQ-injected render proves the comparison is sensitive to chain changes.
  */
 export async function runBitTransparencySelfTest(
     input: BitTransparencySelfTestInput,
@@ -288,6 +301,9 @@ async function renderFixture(options: {
     const mpv = new MpvTestProcess({ args, binaryPath: options.mpvBinary });
     try {
         await mpv.start();
+        for (const [name, value] of Object.entries(NON_TRANSPARENT_BASELINE)) {
+            await mpv.setProperty(name, value);
+        }
         for (const [name, value] of Object.entries(runtimeProperties)) {
             await mpv.setProperty(name, value);
         }

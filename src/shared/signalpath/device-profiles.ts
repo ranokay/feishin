@@ -30,7 +30,6 @@ export interface EffectivePlaybackPolicyDecision {
     /** Set only when the winning selection was `auto`; carries the disclosure. */
     auto: AutoDevicePolicyDecision | null;
     policy: PlaybackPolicy;
-    selection: PlaybackPolicySelection;
 }
 
 export interface ResolvedDeviceProfile {
@@ -116,7 +115,7 @@ const BUILT_IN_DEVICE_PATTERNS = [
     'realtek',
 ];
 
-const EXTERNAL_DEVICE_PATTERNS = ['alsa/hw', 'audio interface', 'dac', 'usb'];
+const EXTERNAL_DEVICE_PATTERNS = ['audio interface', 'dac', 'usb'];
 
 /**
  * Conservative device-class heuristic behind the Auto ("Best Quality")
@@ -129,9 +128,12 @@ const EXTERNAL_DEVICE_PATTERNS = ['alsa/hw', 'audio interface', 'dac', 'usb'];
  *    aggregate, virtual) - standard. Exclusions win over a positive match, so a
  *    virtual device named "USB ..." stays standard.
  * 2. Wireless/streaming endpoints (Bluetooth, AirPlay, AirPods, Wi-Fi) - standard.
- * 3. Built-in host audio (AppleHDA, BuiltIn, MacBook/iMac, internal, Realtek,
+ * 3. External audio (USB, DAC, "audio interface") - exclusive. Nothing else
+ *    proves external: an ALSA `hw:` id can be either a USB DAC or the built-in
+ *    codec (e.g. `alsa/hw:CARD=PCH,DEV=0` is a laptop's HDA Intel), so plain
+ *    hardware ids stay unrecognized rather than guessing.
+ * 4. Built-in host audio (AppleHDA, BuiltIn, MacBook/iMac, internal, Realtek,
  *    the built-in speaker id) - standard.
- * 4. External audio (USB, DAC, "audio interface", ALSA `hw:` device ids) - exclusive.
  * 5. No match, or no explicit device selected (mpv `auto`) - standard.
  *
  * `bit-perfect` is never selected: strict enforcement stays an explicit opt-in,
@@ -154,11 +156,11 @@ export function resolveAutoDevicePolicy(
     if (matchesDevicePattern(facts, WIRELESS_DEVICE_PATTERNS)) {
         return { level: 'inferred', policy: 'standard', reason: 'wireless-device' };
     }
-    if (matchesDevicePattern(facts, BUILT_IN_DEVICE_PATTERNS)) {
-        return { level: 'inferred', policy: 'standard', reason: 'built-in-device' };
-    }
     if (matchesDevicePattern(facts, EXTERNAL_DEVICE_PATTERNS)) {
         return { level: 'inferred', policy: 'exclusive', reason: 'external-device' };
+    }
+    if (matchesDevicePattern(facts, BUILT_IN_DEVICE_PATTERNS)) {
+        return { level: 'inferred', policy: 'standard', reason: 'built-in-device' };
     }
     return { level: 'unknown', policy: 'standard', reason: 'unknown-device' };
 }
@@ -228,10 +230,10 @@ export function resolveEffectivePlaybackPolicyDecision(
         resolveDeviceProfile(profiles, deviceId, description)?.profile.policyOverride ??
         globalSelection;
     if (selection !== 'auto') {
-        return { auto: null, policy: selection, selection };
+        return { auto: null, policy: selection };
     }
     const auto = resolveAutoDevicePolicy(deviceId, description);
-    return { auto, policy: auto.policy, selection };
+    return { auto, policy: auto.policy };
 }
 
 function isPlaybackPolicy(value: unknown): value is PlaybackPolicy {

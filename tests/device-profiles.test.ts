@@ -237,14 +237,26 @@ describe('resolveAutoDevicePolicy', () => {
         {
             description: 'Audio',
             deviceId: 'alsa/hw:CARD=Audio,DEV=0',
-            expected: { level: 'inferred', policy: 'exclusive', reason: 'external-device' },
-            name: 'an ALSA hw device',
+            expected: { level: 'unknown', policy: 'standard', reason: 'unknown-device' },
+            name: 'a bare ALSA hw id (built-in cards use the same shape)',
         },
         {
             description: 'MacBook Pro Speakers',
             deviceId: 'coreaudio/BuiltInSpeakerDevice',
             expected: { level: 'inferred', policy: 'standard', reason: 'built-in-device' },
             name: 'the built-in speakers',
+        },
+        {
+            description: 'Speakers (Realtek(R) Audio)',
+            deviceId: 'wasapi/{guid}',
+            expected: { level: 'inferred', policy: 'standard', reason: 'built-in-device' },
+            name: 'a built-in Realtek codec',
+        },
+        {
+            description: 'Realtek USB Audio',
+            deviceId: 'wasapi/{guid}',
+            expected: { level: 'inferred', policy: 'exclusive', reason: 'external-device' },
+            name: 'an external USB codec whose vendor name is also a built-in one',
         },
         {
             description: 'AirPods Pro',
@@ -321,7 +333,7 @@ describe('resolveEffectivePlaybackPolicyDecision', () => {
                 USB_DAC_ID,
                 USB_DAC_DESCRIPTION,
             ),
-        ).toEqual({ auto: null, policy: 'exclusive', selection: 'exclusive' });
+        ).toEqual({ auto: null, policy: 'exclusive' });
     });
 
     it('resolves an auto global for the selected device', () => {
@@ -330,7 +342,6 @@ describe('resolveEffectivePlaybackPolicyDecision', () => {
         ).toEqual({
             auto: { level: 'inferred', policy: 'exclusive', reason: 'external-device' },
             policy: 'exclusive',
-            selection: 'auto',
         });
     });
 
@@ -365,7 +376,7 @@ describe('resolveEffectivePlaybackPolicyDecision', () => {
                 USB_DAC_ID,
                 USB_DAC_DESCRIPTION,
             ),
-        ).toEqual({ auto: null, policy: 'standard', selection: 'standard' });
+        ).toEqual({ auto: null, policy: 'standard' });
     });
 
     it('lets a profile opt a built-in device into strict enforcement', () => {
@@ -380,7 +391,7 @@ describe('resolveEffectivePlaybackPolicyDecision', () => {
                 'coreaudio/builtin',
                 'MacBook Pro Speakers',
             ),
-        ).toEqual({ auto: null, policy: 'bit-perfect', selection: 'bit-perfect' });
+        ).toEqual({ auto: null, policy: 'bit-perfect' });
     });
 });
 

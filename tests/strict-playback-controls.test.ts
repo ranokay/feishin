@@ -4,6 +4,7 @@ import {
     BIT_PERFECT_MUTE_BEHAVIORS,
     isBitPerfectPlaybackActive,
     normalizeBitPerfectMuteBehavior,
+    resolveBitPerfectStartMute,
     resolveEffectivePlaybackVolume,
     resolvePlaybackControlAction,
 } from '../src/shared/signalpath';
@@ -80,5 +81,51 @@ describe('resolvePlaybackControlAction', () => {
         expect(resolvePlaybackControlAction('bit-perfect', 'gain-mute', 'mute', 'playing')).toBe(
             'toggle-mute',
         );
+    });
+});
+
+describe('resolveBitPerfectStartMute', () => {
+    it('keeps an inherited mute outside active local Bit-Perfect', () => {
+        expect(resolveBitPerfectStartMute('standard', 'local', 'pause', true)).toEqual({
+            clearStoredMute: false,
+            mute: true,
+        });
+        expect(resolveBitPerfectStartMute('exclusive', 'local', 'pause', true)).toEqual({
+            clearStoredMute: false,
+            mute: true,
+        });
+        expect(resolveBitPerfectStartMute('bit-perfect', 'web', 'pause', true)).toEqual({
+            clearStoredMute: false,
+            mute: true,
+        });
+        expect(resolveBitPerfectStartMute('bit-perfect', 'jukebox', 'pause', true)).toEqual({
+            clearStoredMute: false,
+            mute: true,
+        });
+    });
+
+    it('drops an inherited mute when Bit-Perfect pause behavior starts', () => {
+        expect(resolveBitPerfectStartMute('bit-perfect', 'local', 'pause', true)).toEqual({
+            clearStoredMute: true,
+            mute: false,
+        });
+    });
+
+    it('preserves the inherited mute for explicit gain-mute behavior', () => {
+        expect(resolveBitPerfectStartMute('bit-perfect', 'local', 'gain-mute', true)).toEqual({
+            clearStoredMute: false,
+            mute: true,
+        });
+    });
+
+    it('leaves an already-unmuted start unchanged', () => {
+        expect(resolveBitPerfectStartMute('bit-perfect', 'local', 'pause', false)).toEqual({
+            clearStoredMute: false,
+            mute: false,
+        });
+        expect(resolveBitPerfectStartMute('bit-perfect', 'local', 'gain-mute', false)).toEqual({
+            clearStoredMute: false,
+            mute: false,
+        });
     });
 });

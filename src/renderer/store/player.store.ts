@@ -74,6 +74,7 @@ interface Actions {
     moveSelectedToTop: (items: QueueSong[]) => void;
     setCrossfadeDuration: (duration: number) => void;
     setCrossfadeStyle: (style: CrossfadeStyle) => void;
+    setMuted: (muted: boolean) => void;
     setPauseOnNextSongEnd: (value: boolean) => void;
     setQueue: (data: Song[], index?: number, position?: number) => void;
     setRepeat: (repeat: PlayerRepeat) => void;
@@ -1555,6 +1556,11 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                         state.player.crossfadeStyle = style;
                     });
                 },
+                setMuted: (muted: boolean) => {
+                    set((state) => {
+                        state.player.muted = muted;
+                    });
+                },
                 setPauseOnNextSongEnd: (value: boolean) => {
                     set((state) => {
                         state.player.pauseOnNextSongEnd = value;
@@ -1874,6 +1880,7 @@ export const usePlayerActions = () => {
             moveSelectedToTop: state.moveSelectedToTop,
             setCrossfadeDuration: state.setCrossfadeDuration,
             setCrossfadeStyle: state.setCrossfadeStyle,
+            setMuted: state.setMuted,
             setPauseOnNextSongEnd: state.setPauseOnNextSongEnd,
             setQueue: state.setQueue,
             setRepeat: state.setRepeat,

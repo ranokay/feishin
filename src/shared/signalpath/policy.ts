@@ -9,6 +9,10 @@ export const BIT_PERFECT_EFFECTIVE_VOLUME = 100;
 
 export type BitPerfectMuteBehavior = (typeof BIT_PERFECT_MUTE_BEHAVIORS)[number];
 
+export interface BitPerfectStartMute {
+    clearStoredMute: boolean;
+    mute: boolean;
+}
 export type Platform = 'darwin' | 'linux' | 'win32';
 export type PlaybackControl = 'mute' | 'speed' | 'volume';
 export type PlaybackControlAction =
@@ -21,6 +25,7 @@ export type PlaybackControlAction =
 export type PlaybackControlStatus = 'paused' | 'playing' | 'stopped';
 export type PlaybackPolicy = (typeof PLAYBACK_POLICIES)[number];
 export type PlaybackPolicyPlayerType = 'dlna' | 'jukebox' | 'local' | 'web';
+
 export type PlaybackPolicySelection = (typeof PLAYBACK_POLICY_SELECTIONS)[number];
 
 export function isBitPerfectPlaybackActive(
@@ -46,6 +51,25 @@ export function normalizePlaybackPolicySelection(value: unknown): PlaybackPolicy
     return PLAYBACK_POLICY_SELECTIONS.includes(value as PlaybackPolicySelection)
         ? (value as PlaybackPolicySelection)
         : 'standard';
+}
+
+/**
+ * Pause-behavior strict playback re-derives mute from user actions, so a mute
+ * inherited from another policy is dropped at init. Gain-mute keeps it as the
+ * user's explicit choice.
+ */
+export function resolveBitPerfectStartMute(
+    policy: PlaybackPolicy,
+    playerType: PlaybackPolicyPlayerType,
+    behavior: BitPerfectMuteBehavior,
+    isMuted: boolean,
+): BitPerfectStartMute {
+    const unmuteOnStart =
+        isMuted && behavior === 'pause' && isBitPerfectPlaybackActive(policy, playerType);
+    return {
+        clearStoredMute: unmuteOnStart,
+        mute: isMuted && !unmuteOnStart,
+    };
 }
 
 export function resolveEffectivePlaybackVolume(
@@ -125,9 +149,21 @@ export type ReplayGainMode = 'album' | 'no' | 'track';
  * Keeps user mpv arguments intact except where strict playback cannot safely
  * override them across every supported mpv version.
  */
-// Argv flags the Bit-Perfect preset pins itself; user copies would silently
-// compete with the strict pins, so they are dropped instead of ordered around.
-const BIT_PERFECT_BLOCKED_ARGUMENTS = ['--gapless-audio', '--volume-gain'];
+// Argv flags the Bit-Perfect preset pins itself, plus arguments that can alter
+// samples or defeat an invariant outside the pin and observation model. User
+// copies would silently compete with the strict pins, so they are dropped
+// instead of ordered around.
+const BIT_PERFECT_BLOCKED_ARGUMENTS = [
+    '--gapless-audio',
+    '--volume-gain',
+    '--audio-format',
+    '--audio-channels',
+    '--audio-normalize-downmix',
+    '--audio-fallback-to-null',
+    '--ad-lavc-downmix',
+    '--ad-lavc-ac3drc',
+    '--ad-lavc-o',
+];
 
 export function filterPolicyExtraParameters(
     policy: PlaybackPolicy,

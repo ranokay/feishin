@@ -51,6 +51,7 @@ describe('Bit-Perfect runtime property pins', () => {
     it('defines the exact strict property set', () => {
         expect(BIT_PERFECT_PROPERTY_PINS).toEqual([
             { name: 'af', value: [] },
+            { name: 'audio-exclusive', value: 'yes' },
             { name: 'audio-samplerate', value: 0 },
             { name: 'gapless-audio', value: 'weak' },
             { name: 'replaygain', value: 'no' },
@@ -99,6 +100,35 @@ describe('Bit-Perfect runtime property pins', () => {
         expect(filterPolicyExtraParameters('exclusive', parameters)).toEqual(parameters);
     });
 
+    it.each([
+        '--audio-format',
+        '--audio-format=s16',
+        '--audio-channels',
+        '--audio-channels=stereo',
+        '--audio-normalize-downmix',
+        '--audio-normalize-downmix=yes',
+        '--audio-fallback-to-null',
+        '--audio-fallback-to-null=yes',
+        '--ad-lavc-downmix',
+        '--ad-lavc-downmix=yes',
+        '--ad-lavc-ac3drc',
+        '--ad-lavc-ac3drc=1',
+    ])('rejects user %s under Bit-Perfect only', (parameter) => {
+        expect(filterPolicyExtraParameters('bit-perfect', [parameter])).toEqual([]);
+        expect(filterPolicyExtraParameters('standard', [parameter])).toEqual([parameter]);
+        expect(filterPolicyExtraParameters('exclusive', [parameter])).toEqual([parameter]);
+    });
+
+    it('keeps arguments that only share a blocked flag prefix', () => {
+        const parameters = [
+            '--audio-device=coreaudio/DAC',
+            '--audio-exclusive=no',
+            '--audio-format-cache=foo',
+        ];
+
+        expect(filterPolicyExtraParameters('bit-perfect', parameters)).toEqual(parameters);
+    });
+
     it('normalizes mpv filter observations before comparing them', () => {
         const filterPin = BIT_PERFECT_PROPERTY_PINS[0];
 
@@ -124,6 +154,20 @@ describe('Bit-Perfect runtime property pins', () => {
                 false,
             ),
         ).toBeNull();
+    });
+
+    it('accepts mpv boolean flag observations for audio-exclusive and reports drift', () => {
+        const exclusivePin = BIT_PERFECT_PROPERTY_PINS.find(
+            (pin) => pin.name === 'audio-exclusive',
+        )!;
+
+        expect(findStrictPropertyViolation(exclusivePin, 'yes')).toBeNull();
+        expect(findStrictPropertyViolation(exclusivePin, true)).toBeNull();
+        expect(findStrictPropertyViolation(exclusivePin, false)).toEqual({
+            actual: 'false',
+            expected: 'yes',
+            property: 'audio-exclusive',
+        });
     });
 
     it('leaves Standard and Exclusive runtime properties unchanged', () => {

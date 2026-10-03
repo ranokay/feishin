@@ -34,6 +34,7 @@ export type PendingAudioEngineEvent = Omit<AudioEngineEvent, 'id' | 'time'>;
 export const OBSERVED_AUDIO_PROPERTIES = [
     'af',
     'audio-device',
+    'audio-exclusive',
     'audio-out-params',
     'audio-params',
     'audio-samplerate',

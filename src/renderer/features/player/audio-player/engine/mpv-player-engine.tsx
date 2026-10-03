@@ -26,6 +26,7 @@ import { getPlatform } from '/@/renderer/utils/platform';
 import {
     buildMpvEngineConfig,
     type MpvLoadSource,
+    resolveBitPerfectStartMute,
     resolveRadioQueueRestore,
 } from '/@/shared/signalpath';
 import { PlayerStatus } from '/@/shared/types/types';
@@ -72,7 +73,12 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
     const isMountedRef = useRef<boolean>(true);
     const [initializationTick, setInitializationTick] = useState(0);
 
-    const { mpvAudioDeviceId, transcode } = usePlaybackSettings();
+    const {
+        bitPerfectMuteBehavior,
+        mpvAudioDeviceId,
+        transcode,
+        type: playbackType,
+    } = usePlaybackSettings();
     const mpvExtraParameters = useSettingsStore((store) => store.playback.mpvExtraParameters);
     const mpvProperties = useSettingsStore((store) => store.playback.mpvProperties);
     const playbackPolicy = useEffectivePlaybackPolicy();
@@ -129,11 +135,21 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
 
             const platform = getPlatform();
 
+            const startMute = resolveBitPerfectStartMute(
+                playbackPolicy,
+                playbackType,
+                bitPerfectMuteBehavior,
+                isMuted,
+            );
+            if (startMute.clearStoredMute) {
+                usePlayerStore.getState().setMuted(false);
+            }
+
             const { extraParameters, properties } = buildMpvEngineConfig({
                 deviceId: mpvAudioDeviceId,
                 extraParameters: mpvExtraParameters,
                 mpvProperties: getMpvProperties(mpvProperties),
-                mute: isMuted,
+                mute: startMute.mute,
                 platform,
                 playbackPolicy,
                 preservePitch,
@@ -235,7 +251,8 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             setMpvInitialized(false);
             hasPopulatedQueueRef.current = false;
         };
-        // Note: volume, speed, preservePitch, and transcode are intentionally not in dependencies.
+        // Note: volume, speed, preservePitch, mute, the mute behavior setting, and
+        // transcode are intentionally not in dependencies.
         // Volume speed, and preservePitch changes are handled by separate useEffects below to avoid
         // reinitializing the entire player. Transcode changes are handled by queue
         // update callbacks in usePlayerEvents.

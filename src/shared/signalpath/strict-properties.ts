@@ -16,6 +16,7 @@ export interface StrictPropertyViolation {
 
 interface StrictPropertyValues {
     af: unknown[];
+    'audio-exclusive': 'yes';
     'audio-samplerate': number;
     'gapless-audio': 'weak';
     replaygain: 'no';
@@ -25,6 +26,7 @@ interface StrictPropertyValues {
 
 export const BIT_PERFECT_PROPERTY_PINS: readonly StrictPropertyPin[] = [
     { name: 'af', value: [] },
+    { name: 'audio-exclusive', value: 'yes' },
     { name: 'audio-samplerate', value: 0 },
     { name: 'gapless-audio', value: 'weak' },
     { name: 'replaygain', value: 'no' },
@@ -49,6 +51,10 @@ export function findStrictPropertyViolation(
     }
     // mpv's JSON IPC represents the replaygain choice `no` as boolean false.
     if (pin.name === 'replaygain' && actual === false) {
+        return null;
+    }
+    // mpv's JSON IPC represents the audio-exclusive flag as boolean true.
+    if (pin.name === 'audio-exclusive' && actual === true) {
         return null;
     }
     if (actual === pin.value) {

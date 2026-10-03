@@ -231,6 +231,7 @@ export const MpvSettings = memo(() => {
             control: (
                 <NumberInput
                     defaultValue={settings.mpvProperties.audioSampleRateHz || undefined}
+                    disabled={isBitPerfect}
                     max={192000}
                     min={0}
                     onBlur={(e) => {
@@ -246,13 +247,16 @@ export const MpvSettings = memo(() => {
             description: t('setting.sampleRate', {
                 context: 'description',
             }),
-            note: 'Page refresh required for web player',
+            note: isBitPerfect
+                ? t('setting.bitPerfectControlLocked')
+                : 'Page refresh required for web player',
             title: t('setting.sampleRate'),
         },
         {
             control: (
                 <Switch
                     defaultChecked={settings.mpvProperties.audioExclusiveMode === 'yes'}
+                    disabled={isBitPerfect}
                     onChange={(e) =>
                         handleSetMpvProperty(
                             'audioExclusiveMode',
@@ -266,6 +270,7 @@ export const MpvSettings = memo(() => {
                 context: 'description',
             }),
             isHidden: settings.type !== PlayerType.LOCAL,
+            note: isBitPerfect ? t('setting.bitPerfectControlLocked') : undefined,
             title: t('setting.audioExclusiveMode'),
         },
     ];

@@ -88,6 +88,31 @@ describe('buildMpvEngineConfig', () => {
         ]);
     });
 
+    it('drops format, channel, and decoder overrides under bit-perfect', () => {
+        const config = buildMpvEngineConfig(
+            inputs({
+                extraParameters: [
+                    '--audio-format=s16',
+                    '--audio-channels=stereo',
+                    '--audio-normalize-downmix=yes',
+                    '--audio-fallback-to-null=yes',
+                    '--ad-lavc-downmix=yes',
+                    '--ad-lavc-ac3drc=1',
+                    '--keep=1',
+                ],
+                playbackPolicy: 'bit-perfect',
+            }),
+        );
+
+        expect(config.extraParameters).toEqual([
+            '--keep=1',
+            '--ao=coreaudio',
+            '--audio-exclusive=yes',
+            '--gapless-audio=weak',
+            '--audio-device=coreaudio/TestDAC',
+        ]);
+    });
+
     it('keeps user args including volume-gain outside bit-perfect', () => {
         const config = buildMpvEngineConfig(
             inputs({ extraParameters: ['--gapless-audio=yes', '--volume-gain=2'] }),

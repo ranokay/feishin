@@ -113,4 +113,21 @@ describe.skipIf(!mpvAvailable)('strict property enforcement over real mpv IPC', 
 
         expect(await commandMpv.getProperty('gapless-audio')).toBe('weak');
     });
+
+    it('reverts an external audio-exclusive=no attempt so strict playback keeps exclusive access', async () => {
+        snapshots = [];
+        const response = await externalClient.request(['set_property', 'audio-exclusive', 'no']);
+        expect(response.error).toBe('success');
+
+        await waitFor(() =>
+            snapshots.some((snapshot) =>
+                snapshot.strictPropertyViolations.some(
+                    (violation) => violation.property === 'audio-exclusive',
+                ),
+            ),
+        );
+        await waitFor(() => snapshots.at(-1)?.strictPropertyViolations.length === 0);
+
+        expect(await commandMpv.getProperty('audio-exclusive')).toBe(true);
+    });
 });

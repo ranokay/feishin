@@ -50,6 +50,7 @@ describe('observed audio property set', () => {
         expect(OBSERVED_AUDIO_PROPERTIES).toEqual([
             'af',
             'audio-device',
+            'audio-exclusive',
             'audio-out-params',
             'audio-params',
             'audio-samplerate',

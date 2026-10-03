@@ -113,6 +113,8 @@ describe('Bit-Perfect runtime property pins', () => {
         '--ad-lavc-downmix=yes',
         '--ad-lavc-ac3drc',
         '--ad-lavc-ac3drc=1',
+        '--ad-lavc-o',
+        '--ad-lavc-o=drc_scale=1',
     ])('rejects user %s under Bit-Perfect only', (parameter) => {
         expect(filterPolicyExtraParameters('bit-perfect', [parameter])).toEqual([]);
         expect(filterPolicyExtraParameters('standard', [parameter])).toEqual([parameter]);

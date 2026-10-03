@@ -98,6 +98,7 @@ describe('buildMpvEngineConfig', () => {
                     '--audio-fallback-to-null=yes',
                     '--ad-lavc-downmix=yes',
                     '--ad-lavc-ac3drc=1',
+                    '--ad-lavc-o=drc_scale=1',
                     '--keep=1',
                 ],
                 playbackPolicy: 'bit-perfect',

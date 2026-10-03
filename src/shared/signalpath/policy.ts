@@ -162,6 +162,7 @@ const BIT_PERFECT_BLOCKED_ARGUMENTS = [
     '--audio-fallback-to-null',
     '--ad-lavc-downmix',
     '--ad-lavc-ac3drc',
+    '--ad-lavc-o',
 ];
 
 export function filterPolicyExtraParameters(

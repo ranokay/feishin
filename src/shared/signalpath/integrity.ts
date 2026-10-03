@@ -161,7 +161,7 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
         ) {
             return {
                 detail,
-                missingEvidence: [...pendingConfirmation, 'route'],
+                missingEvidence: [...new Set(['route', ...pendingConfirmation])],
                 status: 'bit-perfect-eligible',
             };
         }

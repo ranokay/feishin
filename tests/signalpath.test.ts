@@ -234,6 +234,18 @@ describe('evaluateIntegrity', () => {
         expect(verdict.missingEvidence).toEqual(expect.arrayContaining(['route', 'server-route']));
     });
 
+    it('reports each missing evidence fact once', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                requestedExclusive: true,
+                route: 'wasapi',
+                routeEvidenceLevel: 'inferred',
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toEqual(['route']);
+    });
+
     it('keeps pipewire pending while exclusivity is requested and unconfirmed', () => {
         const verdict = evaluateIntegrity(
             baseObservation({ requestedExclusive: true, route: 'pipewire' }),

@@ -548,6 +548,76 @@ describe('buildSignalPathModel', () => {
         expect(model.integrity.status).toBe('unknown');
     });
 
+    function depthModel(sourceDepth: null | number, decodedFormat: string) {
+        return buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                decodedParams: { channels: 2, format: decodedFormat, samplerate: 44100 },
+            }),
+            source: { ...flacSource, bitDepth: sourceDepth },
+        });
+    }
+
+    function depthEntry(model: ReturnType<typeof buildSignalPathModel>) {
+        return model.processing.find((entry) => entry.detail?.includes('-bit decoded'));
+    }
+
+    it('flags a declared depth the decoded format cannot carry', () => {
+        const model = depthModel(24, 's16');
+        const entry = depthEntry(model);
+
+        expect(entry?.kind).toBe('format-conversion');
+        expect(entry?.detail).toBe('declared 24-bit decoded as s16');
+        expect(entry?.level).toBe('confirmed');
+        expect(model.integrity.status).toBe('exclusive-processed');
+    });
+
+    const preservedDepths: Array<[number, string]> = [
+        [16, 's16'],
+        [24, 's32'],
+        [24, 'float'],
+    ];
+    it.each(preservedDepths)('accepts declared %i-bit decoded as %s', (depth, format) => {
+        expect(depthEntry(depthModel(depth, format))).toBeUndefined();
+    });
+
+    const lossyDepths: Array<[number, string]> = [
+        [32, 's24'],
+        [32, 'float'],
+    ];
+    it.each(lossyDepths)('flags declared %i-bit decoded as %s', (depth, format) => {
+        expect(depthEntry(depthModel(depth, format))?.detail).toBe(
+            `declared ${depth}-bit decoded as ${format}`,
+        );
+    });
+
+    it('does not invent a depth finding for an unknown decoded format', () => {
+        expect(depthEntry(depthModel(24, 'fltp'))).toBeUndefined();
+    });
+
+    it('does not invent a depth finding without a declared depth', () => {
+        expect(depthEntry(depthModel(null, 's16'))).toBeUndefined();
+    });
+
+    it('leaves DSD sources out of the depth check', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                decodedParams: { channels: 2, format: 'float', samplerate: 352800 },
+                outputParams: { channels: 2, format: 'float', samplerate: 352800 },
+            }),
+            source: {
+                ...flacSource,
+                bitDepth: 32,
+                codec: 'dsf',
+                pcmOrDsd: 'dsd',
+                samplingRate: 2822400,
+            },
+        });
+
+        expect(depthEntry(model)).toBeUndefined();
+    });
+
     it('reports standard policy without requesting exclusive', () => {
         const model = buildSignalPathModel({
             ...baseInputs,

@@ -7,6 +7,7 @@ import type { SourceDecodeFilter, SourceDecodeOptions } from './source-decode';
 
 import { weakestLevel } from './evidence';
 import {
+    isDepthPreserved,
     isDepthWidening,
     isDsdCarrierRate,
     isDsdContainer,
@@ -185,6 +186,22 @@ function collectProcessing(
             kind: 'tempo',
             level: 'confirmed',
         });
+    }
+
+    if (source?.pcmOrDsd !== 'dsd') {
+        const declaredDepth = source?.bitDepth ?? null;
+        const decodedFormat = snapshot.decodedParams?.format ?? null;
+        if (
+            declaredDepth !== null &&
+            decodedFormat !== null &&
+            isDepthPreserved(declaredDepth, decodedFormat) === false
+        ) {
+            processing.push({
+                detail: `declared ${declaredDepth}-bit decoded as ${decodedFormat}`,
+                kind: 'format-conversion',
+                level: 'confirmed',
+            });
+        }
     }
 
     const { decodedParams, outputParams } = snapshot;

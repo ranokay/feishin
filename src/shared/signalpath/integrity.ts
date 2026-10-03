@@ -2,7 +2,7 @@ import type { ConfidenceLevel } from './evidence';
 import type { DecodedParams, OutputParams, SourceDeclaration } from './formats';
 import type { StrictPropertyViolation } from './strict-properties';
 
-import { isDsdCarrierRate, isPrecisionPreserving } from './formats';
+import { isDepthPreserved, isDsdCarrierRate, isPrecisionPreserving } from './formats';
 import { classifySourceDecodeFilter } from './source-decode';
 
 // Drivers whose NAME alone proves an exclusive route. Bare 'wasapi'/'pipewire'
@@ -164,6 +164,18 @@ function collectProcessing(observation: IntegrityObservation, detail: string[]):
     if (observation.activeUserFilters.length > 0) {
         processing.push('filters');
         detail.push(`active filters: ${observation.activeUserFilters.join(', ')}`);
+    }
+    if (!sourceIsDsd(observation)) {
+        const declaredDepth = observation.declaredSource?.bitDepth ?? null;
+        const decodedFormat = observation.decodedParams?.format ?? null;
+        if (
+            declaredDepth !== null &&
+            decodedFormat !== null &&
+            isDepthPreserved(declaredDepth, decodedFormat) === false
+        ) {
+            processing.push('format-conversion');
+            detail.push(`declared ${declaredDepth}-bit decoded as ${decodedFormat}`);
+        }
     }
     if (observation.decodedParams && observation.outputParams) {
         const from = observation.decodedParams.format;

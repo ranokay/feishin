@@ -100,6 +100,31 @@ describe('buildMpvEngineConfig', () => {
         ]);
     });
 
+    it('drops bare blocked flags under bit-perfect, not only name=value forms', () => {
+        const config = buildMpvEngineConfig(
+            inputs({
+                extraParameters: ['--gapless-audio', '--volume-gain', '--keep'],
+                playbackPolicy: 'bit-perfect',
+            }),
+        );
+
+        expect(config.extraParameters).toEqual([
+            '--keep',
+            '--ao=coreaudio',
+            '--audio-exclusive=yes',
+            '--gapless-audio=weak',
+            '--audio-device=coreaudio/TestDAC',
+        ]);
+    });
+
+    it('never authors an audio-format property for any policy', () => {
+        for (const playbackPolicy of ['standard', 'bit-perfect'] as const) {
+            const config = buildMpvEngineConfig(inputs({ playbackPolicy }));
+
+            expect(config.properties).not.toHaveProperty('audio-format');
+        }
+    });
+
     it('pins the platform AO for bit-perfect on Windows', () => {
         const config = buildMpvEngineConfig(
             inputs({ platform: 'win32', playbackPolicy: 'bit-perfect' }),
@@ -113,7 +138,7 @@ describe('buildMpvEngineConfig', () => {
         ]);
     });
 
-    it('leaves Linux unpinned under bit-perfect (documents the F1 gap until ticket 05)', () => {
+    it('leaves the Linux audio output unpinned under bit-perfect', () => {
         const config = buildMpvEngineConfig(
             inputs({ platform: 'linux', playbackPolicy: 'bit-perfect' }),
         );
@@ -125,7 +150,7 @@ describe('buildMpvEngineConfig', () => {
         ]);
     });
 
-    it('passes an inherited mute through at init (documents F6 until ticket 03)', () => {
+    it('passes an inherited mute through at init', () => {
         const config = buildMpvEngineConfig(inputs({ mute: true, playbackPolicy: 'bit-perfect' }));
 
         expect(config.properties.mute).toBe(true);

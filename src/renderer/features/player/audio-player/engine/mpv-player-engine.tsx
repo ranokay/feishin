@@ -129,9 +129,6 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
 
             const platform = getPlatform();
 
-            // The builder is the single source of truth for the property and
-            // argument composition: user properties first, control values, then
-            // policy-derived pins; filtered user args, policy args, device last.
             const { extraParameters, properties } = buildMpvEngineConfig({
                 deviceId: mpvAudioDeviceId,
                 extraParameters: mpvExtraParameters,

@@ -881,6 +881,7 @@
         "signalPath_stageProcessing": "DSP",
         "signalPath_stageOutput": "Output route",
         "signalPath_stageDevice": "Device",
+        "signalPath_stageDeviceVolume": "Device volume",
         "signalPath_serverUnverified": "Unverified",
         "signalPath_serverDirect": "Direct stream (original bytes)",
         "signalPath_serverTranscoded": "Transcoded",

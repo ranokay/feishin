@@ -49,6 +49,7 @@ describe('observed audio property set', () => {
     it('covers the fixed observation contract', () => {
         expect(OBSERVED_AUDIO_PROPERTIES).toEqual([
             'af',
+            'ao-volume',
             'audio-device',
             'audio-exclusive',
             'audio-out-params',
@@ -64,6 +65,7 @@ describe('observed audio property set', () => {
             'speed',
             'track-list',
             'volume',
+            'volume-gain',
         ]);
     });
 });
@@ -233,6 +235,22 @@ describe('applyPropertyValue', () => {
         expect(state.playlistPos).toBe(0);
     });
 
+    it('tracks ao-volume and volume-gain, degrading unavailable values to null', () => {
+        const state = createObservedAudioState();
+
+        expect(applyPropertyValue(state, 'ao-volume', 42)).toEqual([]);
+        expect(applyPropertyValue(state, 'volume-gain', 2.5)).toEqual([]);
+        expect(state.aoVolume).toBe(42);
+        expect(state.volumeGain).toBe(2.5);
+
+        // Drivers without an endpoint volume control report the property as
+        // unavailable; that must not leak a non-numeric value into the state.
+        expect(applyPropertyValue(state, 'ao-volume', null)).toEqual([]);
+        expect(state.aoVolume).toBeNull();
+        expect(applyPropertyValue(state, 'volume-gain', 'unsupported')).toEqual([]);
+        expect(state.volumeGain).toBeNull();
+    });
+
     it('emits gapless and device selection changes after first sight', () => {
         const state = createObservedAudioState();
         applyPropertyValue(state, 'gapless-audio', 'weak');
@@ -312,6 +330,8 @@ describe('deriveSnapshot', () => {
             samplerate: 44100,
         });
         applyPropertyValue(state, 'volume', 100);
+        applyPropertyValue(state, 'ao-volume', 35);
+        applyPropertyValue(state, 'volume-gain', -6);
         state.physicalFormat = { level: 'inferred', source: 'mpv-log', value: '44100 Hz 2ch' };
 
         const snapshot = deriveSnapshot(state, 7, 3);
@@ -321,6 +341,8 @@ describe('deriveSnapshot', () => {
         expect(snapshot.aoDriver).toBe('coreaudio');
         expect(snapshot.decodedParams).toEqual({ channels: 2, format: 's16', samplerate: 44100 });
         expect(snapshot.volume).toBe(100);
+        expect(snapshot.aoVolume).toBe(35);
+        expect(snapshot.volumeGain).toBe(-6);
         expect(snapshot.muted).toBeNull();
         expect(snapshot.physicalFormat).toEqual({
             level: 'inferred',

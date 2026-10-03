@@ -33,6 +33,7 @@ export type PendingAudioEngineEvent = Omit<AudioEngineEvent, 'id' | 'time'>;
 
 export const OBSERVED_AUDIO_PROPERTIES = [
     'af',
+    'ao-volume',
     'audio-device',
     'audio-exclusive',
     'audio-out-params',
@@ -48,6 +49,7 @@ export const OBSERVED_AUDIO_PROPERTIES = [
     'speed',
     'track-list',
     'volume',
+    'volume-gain',
 ] as const;
 
 export interface AudioStateConnection {
@@ -86,6 +88,7 @@ export interface AudioStateServiceOptions {
 export interface ObservedAudioState {
     activeFilters: null | string[];
     aoDriver: null | string;
+    aoVolume: null | number;
     audioDevice: null | string;
     availablePhysicalFormats: PhysicalFormatEntry[];
     cacheEofReaching: boolean | null;
@@ -108,6 +111,7 @@ export interface ObservedAudioState {
     strictPropertyViolations: StrictPropertyViolation[];
     strictValidationError: null | string;
     volume: null | number;
+    volumeGain: null | number;
 }
 
 export function applyPropertyValue(
@@ -128,6 +132,9 @@ export function applyPropertyValue(
             state.activeFilters = filters;
             break;
         }
+        case 'ao-volume':
+            state.aoVolume = typeof value === 'number' ? value : null;
+            break;
         case 'audio-device': {
             const next = typeof value === 'string' ? value : null;
             if (state.audioDevice !== null && next !== state.audioDevice) {
@@ -227,6 +234,9 @@ export function applyPropertyValue(
         case 'volume':
             state.volume = typeof value === 'number' ? value : null;
             break;
+        case 'volume-gain':
+            state.volumeGain = typeof value === 'number' ? value : null;
+            break;
         default:
             break;
     }
@@ -238,6 +248,7 @@ export function createObservedAudioState(): ObservedAudioState {
     return {
         activeFilters: null,
         aoDriver: null,
+        aoVolume: null,
         audioDevice: null,
         availablePhysicalFormats: [],
         cacheEofReaching: null,
@@ -260,6 +271,7 @@ export function createObservedAudioState(): ObservedAudioState {
         strictPropertyViolations: [],
         strictValidationError: null,
         volume: null,
+        volumeGain: null,
     };
 }
 
@@ -271,6 +283,7 @@ export function deriveSnapshot(
     return {
         activeFilters: state.activeFilters,
         aoDriver: state.aoDriver,
+        aoVolume: state.aoVolume,
         audioDevice: state.audioDevice,
         availablePhysicalFormats:
             state.availablePhysicalFormats.length > 0
@@ -301,6 +314,7 @@ export function deriveSnapshot(
         strictValidationError: state.strictValidationError,
         timestamp: Date.now(),
         volume: state.volume,
+        volumeGain: state.volumeGain,
     };
 }
 

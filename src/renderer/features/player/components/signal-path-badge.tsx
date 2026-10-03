@@ -209,7 +209,7 @@ export const SignalPathBadge = () => {
     const verdict = VERDICT_META[model.integrity.status];
     const exclusiveRequestedUnconfirmed =
         model.requestedExclusive &&
-        !(model.output.value !== null && isExclusiveRoute(model.output.value));
+        !(model.output.value !== null && isExclusiveRoute(model.output.value, model.device.value));
 
     const openInspector = () => {
         openModal({

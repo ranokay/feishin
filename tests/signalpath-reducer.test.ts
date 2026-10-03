@@ -581,6 +581,51 @@ describe('buildSignalPathModel', () => {
         expect(model.requestedExclusive).toBe(true);
     });
 
+    it('classifies a raw alsa hw device as direct but pending confirmation', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                aoDriver: 'alsa',
+                audioDevice: 'alsa/hw:CARD=Audio,DEV=0',
+            }),
+        });
+
+        expect(model.integrity.status).toBe('bit-perfect-eligible');
+        expect(model.integrity.missingEvidence).toContain('route');
+        expect(model.device.value).toBe('alsa/hw:CARD=Audio,DEV=0');
+    });
+
+    it('keeps a non-hw alsa device shared', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ aoDriver: 'alsa', audioDevice: 'alsa/default' }),
+        });
+
+        expect(model.integrity.status).toBe('unprocessed-shared');
+    });
+
+    it('keeps a requested wasapi route eligible instead of shared', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ aoDriver: 'wasapi', audioDevice: 'wasapi/{guid}' }),
+        });
+
+        expect(model.requestedExclusive).toBe(true);
+        expect(model.integrity.status).toBe('bit-perfect-eligible');
+        expect(model.integrity.missingEvidence).toContain('route');
+    });
+
+    it('keeps a capable route shared when the policy does not request exclusivity', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            policy: 'standard',
+            snapshot: baseSnapshot({ aoDriver: 'wasapi', audioDevice: 'wasapi/{guid}' }),
+        });
+
+        expect(model.requestedExclusive).toBe(false);
+        expect(model.integrity.status).toBe('unprocessed-shared');
+    });
+
     it('carries physical format evidence through to the device stage', () => {
         const model = buildSignalPathModel({
             ...baseInputs,

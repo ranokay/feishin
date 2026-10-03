@@ -8,6 +8,7 @@ import {
     evidence,
     type IntegrityObservation,
     isDepthPreserved,
+    isExclusiveRoute,
     isPrecisionPreserving,
     resolvePolicy,
 } from '../src/shared/signalpath';
@@ -61,6 +62,29 @@ describe('format precision', () => {
     it('reports incomparable for unknown formats', () => {
         expect(compareFormats('fltp', 's16')).toBe('incomparable');
         expect(isPrecisionPreserving('mystery', 's32')).toBe(false);
+    });
+});
+
+describe('route classification', () => {
+    it.each([
+        ['coreaudio', null, false],
+        ['coreaudio_exclusive', null, true],
+        ['avfoundation', null, false],
+        ['wasapi', null, false],
+        ['pipewire', null, false],
+        ['pulse', null, false],
+        ['alsa', null, false],
+        ['alsa', 'alsa/default', false],
+        ['alsa', 'alsa/hw:CARD=Audio,DEV=0', true],
+    ] as Array<[string, null | string, boolean]>)(
+        'classifies %s on device %s as exclusive=%s',
+        (route, device, expected) => {
+            expect(isExclusiveRoute(route, device)).toBe(expected);
+        },
+    );
+
+    it('does not treat an unknown route as exclusive', () => {
+        expect(isExclusiveRoute('')).toBe(false);
     });
 });
 
@@ -186,6 +210,82 @@ describe('evaluateIntegrity', () => {
             baseObservation({ route: 'avfoundation', routeEvidenceLevel: 'confirmed' }),
         );
         expect(verdict.status).toBe('unprocessed-shared');
+    });
+
+    it('keeps a requested exclusive-capable route eligible instead of shared', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({ requestedExclusive: true, route: 'wasapi' }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toContain('route');
+    });
+
+    it('keeps pipewire pending while exclusivity is requested and unconfirmed', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({ requestedExclusive: true, route: 'pipewire' }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toContain('route');
+    });
+
+    it('keeps exclusive-capable routes shared when exclusivity was not requested', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({ requestedExclusive: false, route: 'wasapi' }),
+        );
+        expect(verdict.status).toBe('unprocessed-shared');
+    });
+
+    it('keeps non-capable shared routes shared even when exclusivity was requested', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({ requestedExclusive: true, route: 'avfoundation' }),
+        );
+        expect(verdict.status).toBe('unprocessed-shared');
+    });
+
+    it('treats alsa on a raw hw device as direct but not confirmed exclusive', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                audioDevice: 'alsa/hw:CARD=Audio,DEV=0',
+                requestedExclusive: true,
+                route: 'alsa',
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toContain('route');
+    });
+
+    it('keeps alsa on a non-hw device shared', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                audioDevice: 'alsa/default',
+                requestedExclusive: true,
+                route: 'alsa',
+            }),
+        );
+        expect(verdict.status).toBe('unprocessed-shared');
+    });
+
+    it('does not confirm a direct alsa route even without an exclusive request', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                audioDevice: 'alsa/hw:CARD=Audio,DEV=0',
+                requestedExclusive: false,
+                route: 'alsa',
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toContain('route');
+    });
+
+    it('does not label processing on an unconfirmed route as exclusive-processed', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                activeUserFilters: ['lavfi'],
+                requestedExclusive: true,
+                route: 'wasapi',
+            }),
+        );
+        expect(verdict.status).toBe('processed');
     });
 
     it('reports transcoded regardless of everything else', () => {

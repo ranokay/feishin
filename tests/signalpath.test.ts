@@ -3,14 +3,15 @@ import { describe, expect, it } from 'vitest';
 import type { SourceDeclaration } from '../src/shared/signalpath/formats';
 
 import {
+    classifyRoute,
     compareFormats,
     evaluateIntegrity,
     evidence,
     type IntegrityObservation,
     isDepthPreserved,
-    isExclusiveRoute,
     isPrecisionPreserving,
     resolvePolicy,
+    type RouteKind,
 } from '../src/shared/signalpath';
 
 const cleanSource: SourceDeclaration = {
@@ -67,24 +68,24 @@ describe('format precision', () => {
 
 describe('route classification', () => {
     it.each([
-        ['coreaudio', null, false],
-        ['coreaudio_exclusive', null, true],
-        ['avfoundation', null, false],
-        ['wasapi', null, false],
-        ['pipewire', null, false],
-        ['pulse', null, false],
-        ['alsa', null, false],
-        ['alsa', 'alsa/default', false],
-        ['alsa', 'alsa/hw:CARD=Audio,DEV=0', true],
-    ] as Array<[string, null | string, boolean]>)(
-        'classifies %s on device %s as exclusive=%s',
+        ['coreaudio', null, 'shared'],
+        ['coreaudio_exclusive', null, 'confirmed-exclusive'],
+        ['avfoundation', null, 'shared'],
+        ['wasapi', null, 'exclusive-capable'],
+        ['pipewire', null, 'exclusive-capable'],
+        ['pulse', null, 'shared'],
+        ['alsa', null, 'shared'],
+        ['alsa', 'alsa/default', 'shared'],
+        ['alsa', 'alsa/hw:CARD=Audio,DEV=0', 'direct'],
+    ] as Array<[string, null | string, RouteKind]>)(
+        'classifies %s on device %s as %s',
         (route, device, expected) => {
-            expect(isExclusiveRoute(route, device)).toBe(expected);
+            expect(classifyRoute(route, device)).toBe(expected);
         },
     );
 
     it('does not treat an unknown route as exclusive', () => {
-        expect(isExclusiveRoute('')).toBe(false);
+        expect(classifyRoute('')).toBe('shared');
     });
 });
 
@@ -283,6 +284,18 @@ describe('evaluateIntegrity', () => {
                 activeUserFilters: ['lavfi'],
                 requestedExclusive: true,
                 route: 'wasapi',
+            }),
+        );
+        expect(verdict.status).toBe('processed');
+    });
+
+    it('does not label processing on a direct alsa hw route as exclusive-processed', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                activeUserFilters: ['lavfi'],
+                audioDevice: 'alsa/hw:CARD=Audio,DEV=0',
+                requestedExclusive: true,
+                route: 'alsa',
             }),
         );
         expect(verdict.status).toBe('processed');

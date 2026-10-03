@@ -255,6 +255,12 @@ export const StreamInspectorModal = () => {
 
             <Section title={t('player.signalPath_inspectorDevice')}>
                 <StageRow item={model.device} label={t('player.signalPath_stageDevice')} />
+                {model.deviceVolume && (
+                    <StageRow
+                        item={model.deviceVolume}
+                        label={t('player.signalPath_stageDeviceVolume')}
+                    />
+                )}
                 {snapshot?.physicalFormat && (
                     <Group gap="xs" wrap="nowrap">
                         <Text size="xs">{snapshot.physicalFormat.value}</Text>

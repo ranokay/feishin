@@ -40,6 +40,11 @@ export type AudioEngineEventType = (typeof AUDIO_ENGINE_EVENT_TYPES)[number];
 export interface AudioSnapshot {
     activeFilters: null | string[];
     aoDriver: null | string;
+    /**
+     * mpv ao-volume (endpoint/OS volume). Driver-dependent: may be hardware or
+     * a software control, so it is evidence, never a processing claim.
+     */
+    aoVolume?: null | number;
     audioDevice: null | string;
     /** coreaudio_exclusive physical-format list from v-level logs; inferred tier. */
     availablePhysicalFormats?: Evidence<PhysicalFormatEntry[]> | null;
@@ -76,6 +81,8 @@ export interface AudioSnapshot {
     strictValidationError: null | string;
     timestamp: number;
     volume: null | number;
+    /** mpv volume-gain in dB; folded into the softvol gain at the AO boundary. */
+    volumeGain?: null | number;
 }
 
 // sequence/timestamp advance on every broadcast; they signal transport, not

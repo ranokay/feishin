@@ -253,6 +253,63 @@ describe('buildSignalPathModel', () => {
         expect(model.integrity.status).toBe('exclusive-processed');
     });
 
+    it('shows observed device volume without counting it as processing', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ aoVolume: 35 }),
+        });
+
+        // ao-volume may be a hardware control, so it never downgrades the verdict.
+        expect(processingKinds(model)).not.toContain('gain');
+        expect(model.deviceVolume).toEqual({ detail: null, level: 'confirmed', value: '35%' });
+        expect(model.integrity.status).toBe('bit-perfect-eligible');
+    });
+
+    it('shows no device volume while ao-volume was not observed', () => {
+        const model = buildSignalPathModel(baseInputs);
+
+        expect(model.deviceVolume).toBeNull();
+    });
+
+    it('ignores a zero volume-gain', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ volumeGain: 0 }),
+        });
+
+        expect(processingKinds(model)).not.toContain('gain');
+        expect(model.integrity.status).toBe('bit-perfect-eligible');
+    });
+
+    it('lists a non-unity volume-gain as confirmed software gain', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({ volumeGain: -6 }),
+        });
+
+        const gain = model.processing.find((entry) => entry.kind === 'gain');
+        expect(gain?.detail).toBe('-6 dB');
+        expect(gain?.level).toBe('confirmed');
+        expect(model.integrity.status).toBe('exclusive-processed');
+    });
+
+    it('never verifies bit-perfect while volume-gain alters samples', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                serverRoute: {
+                    detail: null,
+                    level: 'confirmed',
+                    route: 'direct-stream',
+                    verification: 'size-match',
+                },
+                volumeGain: 3,
+            }),
+        });
+
+        expect(model.integrity.status).toBe('exclusive-processed');
+    });
+
     it('lists replaygain as requested-tier processing', () => {
         const model = buildSignalPathModel({ ...baseInputs, replayGainMode: 'track' });
 

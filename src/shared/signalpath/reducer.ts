@@ -56,6 +56,11 @@ export interface SignalPathItem {
 export interface SignalPathModel {
     decoder: SignalPathItem;
     device: SignalPathItem;
+    /**
+     * Observed AO endpoint volume (mpv ao-volume). Driver-dependent evidence:
+     * it may control hardware gain, so it never counts as software processing.
+     */
+    deviceVolume: null | SignalPathItem;
     integrity: IntegrityVerdict;
     output: SignalPathItem;
     physicalFormat: AudioSnapshot['physicalFormat'];
@@ -116,6 +121,15 @@ function collectProcessing(
     if (snapshot.volume !== null && (snapshot.muted || snapshot.volume !== 100)) {
         processing.push({
             detail: snapshot.muted ? 'muted' : `${snapshot.volume}%`,
+            kind: 'gain',
+            level: 'confirmed',
+        });
+    }
+
+    if ((snapshot.volumeGain ?? 0) !== 0) {
+        // Additional dB gain folded into the same AO multiply as volume/mute.
+        processing.push({
+            detail: `${snapshot.volumeGain} dB`,
             kind: 'gain',
             level: 'confirmed',
         });
@@ -290,6 +304,7 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
         return {
             decoder: UNKNOWN_ITEM,
             device: UNKNOWN_ITEM,
+            deviceVolume: null,
             integrity: { detail: [], missingEvidence: ['engine'], status: 'unknown' },
             output: UNKNOWN_ITEM,
             physicalFormat: null,
@@ -350,6 +365,10 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
                       ),
             value: snapshot.audioDevice,
         },
+        deviceVolume:
+            snapshot.aoVolume === null || snapshot.aoVolume === undefined
+                ? null
+                : { detail: null, level: 'confirmed', value: `${snapshot.aoVolume}%` },
         integrity,
         output: snapshot.aoDriver
             ? { detail: null, level: 'confirmed', value: snapshot.aoDriver }

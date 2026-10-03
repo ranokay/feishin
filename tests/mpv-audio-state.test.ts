@@ -214,6 +214,36 @@ describe.skipIf(!mpvAvailable)('AudioStateService over real mpv playback', () =>
         }
     });
 
+    it('observes volume-gain where available and reports an unavailable ao-volume as null', async () => {
+        // mpv before 0.38 has no volume-gain property at all; observing it must
+        // degrade to null instead of failing the observation set.
+        const probe = await mpv.request(['get_property', 'volume-gain']);
+        const hasVolumeGain = probe.error === 'success';
+
+        await mpv.request(['loadfile', await writeWav(44100), 'replace']);
+        const snapshot = await waitForSnapshot(
+            (candidate) =>
+                candidate.decodedParams?.samplerate === 44100 &&
+                (!hasVolumeGain ||
+                    (candidate.volumeGain !== null && candidate.volumeGain !== undefined)),
+        );
+
+        // The null AO has no endpoint volume control: mpv reports the property
+        // as unavailable, which must degrade to null, not break observation.
+        expect(snapshot.aoVolume ?? null).toBeNull();
+
+        if (!hasVolumeGain) {
+            expect(snapshot.volumeGain ?? null).toBeNull();
+            return;
+        }
+
+        expect(snapshot.volumeGain).toBe(0);
+        await mpv.setProperty('volume-gain', -6);
+        const altered = await waitForSnapshot((candidate) => candidate.volumeGain === -6);
+        expect(altered.volumeGain).toBe(-6);
+        await mpv.setProperty('volume-gain', 0);
+    });
+
     it('stops cleanly on dispose without affecting other IPC clients', async () => {
         service.dispose();
         expect(service.getEvents()).toHaveLength(0);

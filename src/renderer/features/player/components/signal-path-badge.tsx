@@ -277,6 +277,12 @@ export const SignalPathBadge = () => {
                         label={t('player.signalPath_stageOutput')}
                     />
                     <StageRow item={model.device} label={t('player.signalPath_stageDevice')} />
+                    {model.deviceVolume && (
+                        <StageRow
+                            item={model.deviceVolume}
+                            label={t('player.signalPath_stageDeviceVolume')}
+                        />
+                    )}
                     <Button
                         fullWidth
                         onClick={() => void toggleDeviceProfile()}

@@ -7,6 +7,7 @@ import {
     evaluateIntegrity,
     evidence,
     type IntegrityObservation,
+    isDepthPreserved,
     isPrecisionPreserving,
     resolvePolicy,
 } from '../src/shared/signalpath';
@@ -60,6 +61,40 @@ describe('format precision', () => {
     it('reports incomparable for unknown formats', () => {
         expect(compareFormats('fltp', 's16')).toBe('incomparable');
         expect(isPrecisionPreserving('mystery', 's32')).toBe(false);
+    });
+});
+
+describe('depth preservation', () => {
+    const preservedCases: Array<[number, string]> = [
+        [16, 's16'],
+        [24, 's32'],
+        [24, 'float'],
+        [32, 's32'],
+    ];
+    it.each(preservedCases)(
+        'treats declared %i-bit decoded as %s as preserved',
+        (depth, format) => {
+            expect(isDepthPreserved(depth, format)).toBe(true);
+        },
+    );
+
+    const lossCases: Array<[number, string]> = [
+        [24, 's16'],
+        [32, 's24'],
+        [32, 'float'],
+    ];
+    it.each(lossCases)('flags declared %i-bit decoded as %s', (depth, format) => {
+        expect(isDepthPreserved(depth, format)).toBe(false);
+    });
+
+    const unknownCases: Array<[null | number, null | string]> = [
+        [null, 's16'],
+        [24, null],
+        [24, 'fltp'],
+        [24, 'mystery'],
+    ];
+    it.each(unknownCases)('reports unknown without a finding for %s / %s', (depth, format) => {
+        expect(isDepthPreserved(depth, format)).toBeNull();
     });
 });
 
@@ -184,6 +219,94 @@ describe('evaluateIntegrity', () => {
         );
         expect(['exclusive-processed', 'processed']).toContain(verdict.status);
         expect(verdict.detail.join(' ')).toContain('s32 -> float');
+    });
+
+    it('flags a declared 24-bit source decoded as s16', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: { ...cleanSource, bitDepth: 24 },
+            }),
+        );
+        expect(verdict.status).toBe('exclusive-processed');
+        expect(verdict.detail.join(' ')).toContain('declared 24-bit decoded as s16');
+    });
+
+    it('keeps a declared 24-bit source decoded as s32 verified', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: { ...cleanSource, bitDepth: 24 },
+                decodedParams: { channels: 2, format: 's32', samplerate: 44100 },
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-verified');
+    });
+
+    it('keeps a declared 24-bit source decoded as float verified', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: { ...cleanSource, bitDepth: 24 },
+                decodedParams: { channels: 2, format: 'float', samplerate: 44100 },
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-verified');
+    });
+
+    it('flags a declared 32-bit source decoded as s24', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: { ...cleanSource, bitDepth: 32 },
+                decodedParams: { channels: 2, format: 's24', samplerate: 44100 },
+            }),
+        );
+        expect(verdict.status).toBe('exclusive-processed');
+        expect(verdict.detail.join(' ')).toContain('declared 32-bit decoded as s24');
+    });
+
+    it('flags a declared 32-bit source decoded as float', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: { ...cleanSource, bitDepth: 32 },
+                decodedParams: { channels: 2, format: 'float', samplerate: 44100 },
+            }),
+        );
+        expect(verdict.status).toBe('exclusive-processed');
+        expect(verdict.detail.join(' ')).toContain('declared 32-bit decoded as float');
+    });
+
+    it('does not invent a depth finding for an unknown decoded format', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: { ...cleanSource, bitDepth: 24 },
+                decodedParams: { channels: 2, format: 'fltp', samplerate: 44100 },
+            }),
+        );
+        expect(verdict.detail.join(' ')).not.toContain('declared 24-bit');
+    });
+
+    it('leaves DSD sources out of the depth check', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: {
+                    ...cleanSource,
+                    bitDepth: 32,
+                    codec: 'dsf',
+                    pcmOrDsd: 'dsd',
+                    samplingRate: 2822400,
+                },
+                decodedParams: { channels: 2, format: 'float', samplerate: 352800 },
+                outputParams: { channels: 2, format: 'float', samplerate: 352800 },
+            }),
+        );
+        expect(verdict.detail.join(' ')).not.toContain('declared 32-bit');
+    });
+
+    it('stays verified when the source declares no depth', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                declaredSource: { ...cleanSource, bitDepth: null },
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-verified');
     });
 
     it('caps DSD-derived playback below bit-perfect', () => {

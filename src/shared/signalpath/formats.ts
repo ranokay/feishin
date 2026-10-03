@@ -55,6 +55,21 @@ export function compareFormats(from: string, to: string): FormatRelation {
     return 'narrowing';
 }
 
+/**
+ * A declared depth survives only when the decoded PCM format's capacity covers
+ * it. Missing depth or an unrecognized format returns null: unknown is never a
+ * finding.
+ */
+export function isDepthPreserved(
+    declaredBitDepth: null | number,
+    decodedFormat: null | string,
+): boolean | null {
+    if (declaredBitDepth === null || decodedFormat === null || !isKnownPcmFormat(decodedFormat)) {
+        return null;
+    }
+    return FORMAT_CAPACITY_BITS[decodedFormat] >= declaredBitDepth;
+}
+
 export function isDepthWidening(
     sourceBitDepth: null | number,
     outputFormat: null | string,

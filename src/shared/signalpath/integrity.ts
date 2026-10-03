@@ -150,6 +150,7 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
         return { detail, missingEvidence, status: 'unknown' };
     }
 
+    const pendingConfirmation = collectPendingConfirmation(observation);
     if (routeKind !== 'confirmed-exclusive') {
         // A capable route under a requested exclusive policy, or a route the
         // device names as raw hardware access, stays pending instead of
@@ -160,14 +161,13 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
         ) {
             return {
                 detail,
-                missingEvidence: [...missingEvidence, 'route'],
+                missingEvidence: [...pendingConfirmation, 'route'],
                 status: 'bit-perfect-eligible',
             };
         }
         return { detail, missingEvidence, status: 'unprocessed-shared' };
     }
 
-    const pendingConfirmation = collectPendingConfirmation(observation);
     if (pendingConfirmation.length > 0) {
         return { detail, missingEvidence: pendingConfirmation, status: 'bit-perfect-eligible' };
     }

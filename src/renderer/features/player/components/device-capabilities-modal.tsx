@@ -46,7 +46,11 @@ function capabilityDisplayValue(
     translate: (key: string) => string,
 ): string {
     if (entry.level === 'unknown') {
-        return translate('player.deviceCapabilities_unknown');
+        // Physical formats are not observable off macOS; "Unknown" would read
+        // as missing data rather than an unavailable probe.
+        return entry.field === 'physicalFormats'
+            ? translate('player.deviceCapabilities_notObservable')
+            : translate('player.deviceCapabilities_unknown');
     }
     if (entry.value !== null) {
         return entry.value;

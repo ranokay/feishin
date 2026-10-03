@@ -626,7 +626,7 @@ describe('buildSignalPathModel', () => {
         expect(model.integrity.status).toBe('unprocessed-shared');
     });
 
-    it('carries physical format evidence through to the device stage', () => {
+    it('keeps log-derived physical format evidence off the device stage', () => {
         const model = buildSignalPathModel({
             ...baseInputs,
             snapshot: baseSnapshot({
@@ -635,8 +635,41 @@ describe('buildSignalPathModel', () => {
             }),
         });
 
-        // Log-derived evidence must not display as confirmed.
-        expect(model.device.level).toBe('inferred');
+        // Without a reported device the row is unknown; the log-derived format
+        // keeps its own evidence row and never confirms the device.
+        expect(model.device.level).toBe('unknown');
+        expect(model.device.value).toBeNull();
+        expect(model.physicalFormat?.level).toBe('inferred');
+    });
+
+    it('separates the device stage from the physical format evidence', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                audioDevice: 'coreaudio/DAC',
+                physicalFormat: { level: 'inferred', source: 'mpv-log', value: '44100 Hz' },
+            }),
+        });
+
+        // The device row keeps the device name; the physical format renders as
+        // its own evidence row instead of replacing the device value.
+        expect(model.device.value).toBe('coreaudio/DAC');
+        expect(model.device.detail).toBeNull();
+        expect(model.physicalFormat?.value).toBe('44100 Hz');
+    });
+
+    it('reports device confidence independently from physical format evidence', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                audioDevice: 'coreaudio/DAC',
+                physicalFormat: { level: 'inferred', source: 'mpv-log', value: '44100 Hz' },
+            }),
+        });
+
+        // A confirmed device must not inherit the log-derived physical
+        // format's weaker evidence; that row carries its own dot.
+        expect(model.device.level).toBe('confirmed');
         expect(model.physicalFormat?.level).toBe('inferred');
     });
 

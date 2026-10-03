@@ -5,7 +5,6 @@ import type { ReplayGainMode } from './policy';
 import type { AudioSnapshot } from './snapshot';
 import type { SourceDecodeFilter, SourceDecodeOptions } from './source-decode';
 
-import { weakestLevel } from './evidence';
 import {
     isDepthPreserved,
     isDepthWidening,
@@ -355,16 +354,8 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
               }
             : UNKNOWN_ITEM,
         device: {
-            detail: snapshot.physicalFormat?.value ?? null,
-            level:
-                snapshot.audioDevice === null && snapshot.physicalFormat === null
-                    ? 'unknown'
-                    : weakestLevel(
-                          ...(snapshot.audioDevice !== null ? (['confirmed'] as const) : []),
-                          ...(snapshot.physicalFormat !== null
-                              ? [snapshot.physicalFormat.level]
-                              : []),
-                      ),
+            detail: null,
+            level: snapshot.audioDevice === null ? 'unknown' : 'confirmed',
             value: snapshot.audioDevice,
         },
         deviceVolume:

@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import styles from './signal-path-badge.module.css';
-import { EvidenceDot, formatServerStage, StageRow } from './signal-path-rows';
+import { EvidenceDot, formatServerStage, PhysicalFormatRow, StageRow } from './signal-path-rows';
 import { StreamInspectorModal } from './stream-inspector-modal';
 
 import { getMpvAudioDevices } from '/@/renderer/features/settings/components/playback/audio-settings';
@@ -277,6 +277,7 @@ export const SignalPathBadge = () => {
                         label={t('player.signalPath_stageOutput')}
                     />
                     <StageRow item={model.device} label={t('player.signalPath_stageDevice')} />
+                    <PhysicalFormatRow format={model.physicalFormat} />
                     {model.deviceVolume && (
                         <StageRow
                             item={model.deviceVolume}

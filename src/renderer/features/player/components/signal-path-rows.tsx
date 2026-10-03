@@ -1,5 +1,5 @@
 import type { ConfidenceLevel } from '/@/shared/signalpath';
-import type { ServerRouteEvidence, SignalPathItem } from '/@/shared/signalpath';
+import type { Evidence, ServerRouteEvidence, SignalPathItem } from '/@/shared/signalpath';
 
 import { useTranslation } from 'react-i18next';
 
@@ -39,6 +39,25 @@ export const StageRow = ({ item, label }: { item: SignalPathItem; label: string 
         </Group>
     </Group>
 );
+
+/**
+ * Physical format is macOS-only evidence (coreaudio exclusive logs). When the
+ * engine cannot observe it, say so instead of implying hardware confirmation.
+ */
+export const PhysicalFormatRow = ({ format }: { format: Evidence<string> | null }) => {
+    const { t } = useTranslation();
+
+    return (
+        <StageRow
+            item={{
+                detail: null,
+                level: format?.level ?? 'unknown',
+                value: format?.value ?? t('player.signalPath_notObservable'),
+            }}
+            label={t('player.signalPath_stagePhysicalFormat')}
+        />
+    );
+};
 
 /**
  * Human-readable server stage line: label plus the verification method when

@@ -640,6 +640,22 @@ describe('buildSignalPathModel', () => {
         expect(model.physicalFormat?.level).toBe('inferred');
     });
 
+    it('separates the device stage from the physical format evidence', () => {
+        const model = buildSignalPathModel({
+            ...baseInputs,
+            snapshot: baseSnapshot({
+                audioDevice: 'coreaudio/DAC',
+                physicalFormat: { level: 'inferred', source: 'mpv-log', value: '44100 Hz' },
+            }),
+        });
+
+        // The device row keeps the device name; the physical format renders as
+        // its own evidence row instead of replacing the device value.
+        expect(model.device.value).toBe('coreaudio/DAC');
+        expect(model.device.detail).toBeNull();
+        expect(model.physicalFormat?.value).toBe('44100 Hz');
+    });
+
     it('treats a missing ao driver as unknown-route evidence', () => {
         const model = buildSignalPathModel({
             ...baseInputs,

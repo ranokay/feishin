@@ -2,7 +2,7 @@ import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { EvidenceDot, formatServerStage, StageRow } from './signal-path-rows';
+import { formatServerStage, PhysicalFormatRow, StageRow } from './signal-path-rows';
 import styles from './stream-inspector-modal.module.css';
 
 import { useAudioSnapshot } from '/@/renderer/store/audio-state.store';
@@ -255,17 +255,12 @@ export const StreamInspectorModal = () => {
 
             <Section title={t('player.signalPath_inspectorDevice')}>
                 <StageRow item={model.device} label={t('player.signalPath_stageDevice')} />
+                <PhysicalFormatRow format={model.physicalFormat} />
                 {model.deviceVolume && (
                     <StageRow
                         item={model.deviceVolume}
                         label={t('player.signalPath_stageDeviceVolume')}
                     />
-                )}
-                {snapshot?.physicalFormat && (
-                    <Group gap="xs" wrap="nowrap">
-                        <Text size="xs">{snapshot.physicalFormat.value}</Text>
-                        <EvidenceDot level={snapshot.physicalFormat.level} />
-                    </Group>
                 )}
             </Section>
 

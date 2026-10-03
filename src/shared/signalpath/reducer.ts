@@ -355,7 +355,7 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
               }
             : UNKNOWN_ITEM,
         device: {
-            detail: snapshot.physicalFormat?.value ?? null,
+            detail: null,
             level:
                 snapshot.audioDevice === null && snapshot.physicalFormat === null
                     ? 'unknown'

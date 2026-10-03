@@ -24,9 +24,8 @@ import {
 import { logger } from '/@/renderer/utils/logger';
 import { getPlatform } from '/@/renderer/utils/platform';
 import {
-    filterPolicyExtraParameters,
+    buildMpvEngineConfig,
     type MpvLoadSource,
-    policyStartupConfig,
     resolveRadioQueueRestore,
 } from '/@/shared/signalpath';
 import { PlayerStatus } from '/@/shared/types/types';
@@ -130,32 +129,17 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
 
             const platform = getPlatform();
 
-            // Merge the policy-derived startup config (AO pinning, exclusive
-            // flags, strict pins) at the existing initialization choke point.
-            // Standard resolves to empty, leaving today's arg set untouched.
-            const { runtimeProperties, startupArgs } = policyStartupConfig(
-                playbackPolicy,
-                platform,
-            );
-
-            // Initialize mpv with fresh state. Policy-derived runtime pins go
-            // last so strict values (unity gain, unit speed) win at startup.
-            const properties: Record<string, any> = {
-                ...getMpvProperties(mpvProperties),
-                'audio-pitch-correction': preservePitch === false ? 'no' : 'yes',
+            const { extraParameters, properties } = buildMpvEngineConfig({
+                deviceId: mpvAudioDeviceId,
+                extraParameters: mpvExtraParameters,
+                mpvProperties: getMpvProperties(mpvProperties),
                 mute: isMuted,
-                speed: speed,
-                volume: volume,
-                ...runtimeProperties,
-            };
-
-            const extraParameters: string[] = [
-                ...filterPolicyExtraParameters(playbackPolicy, mpvExtraParameters),
-                ...startupArgs,
-            ];
-
-            const audioDevice = mpvAudioDeviceId?.trim() || 'auto';
-            extraParameters.push(`--audio-device=${audioDevice}`);
+                platform,
+                playbackPolicy,
+                preservePitch,
+                speed,
+                volume,
+            });
 
             await mpvPlayer?.initialize({
                 extraParameters,

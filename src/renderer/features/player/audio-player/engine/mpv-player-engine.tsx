@@ -130,6 +130,12 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
                 }
             }
 
+            // A superseded run (policy or settings changed while the shutdown loop
+            // awaited) must not touch the store or start another mpv instance.
+            if (isCancelled) {
+                return;
+            }
+
             // Reset initialization state
             hasPopulatedQueueRef.current = false;
 

@@ -10,12 +10,20 @@ import { classifySourceDecodeFilter } from './source-decode';
 // too, so claiming exclusivity from them would overclaim (anti-overclaim rule 2).
 export const EXCLUSIVE_DRIVERS = ['coreaudio_exclusive'] as const;
 
+// AOs that honor --audio-exclusive but report the same AO name in shared and
+// exclusive modes; the observed name cannot distinguish the two modes.
+const EXCLUSIVE_CAPABLE_DRIVERS = ['pipewire', 'wasapi'] as const;
+
 export interface IntegrityObservation {
     activeUserFilters: string[];
+    /** mpv's configured device id; a raw alsa hw: PCM is direct access. */
+    audioDevice?: null | string;
     declaredSource: null | SourceDeclaration;
     decodedParams: DecodedParams | null;
     filterEvidenceLevel: ConfidenceLevel;
     outputParams: null | OutputParams;
+    /** The active policy asked the AO for exclusive device access. */
+    requestedExclusive?: boolean;
     /** An explicit source-faithful decode was opted in for this playback. */
     requestedSourceDecode?: boolean;
     route: string;
@@ -45,9 +53,34 @@ export interface IntegrityVerdict {
     status: IntegrityStatus;
 }
 
+export type RouteKind = 'confirmed-exclusive' | 'direct' | 'exclusive-capable' | 'shared';
+
 export interface SoftwareProcessingOp {
     detail: string;
     kind: string;
+}
+
+/**
+ * Classify an AO route by the device-access evidence it carries:
+ * - `confirmed-exclusive`: the AO name proves exclusive access by construction.
+ * - `direct`: the configured device names raw hardware access (`alsa hw:`),
+ *   which no mpv property confirms as exclusive.
+ * - `exclusive-capable`: the AO honors --audio-exclusive but reports the same
+ *   name in shared and exclusive modes, so the mode cannot be read from it.
+ * - `shared`: everything else.
+ */
+export function classifyRoute(route: string, audioDevice?: null | string): RouteKind {
+    if (route.endsWith('-exclusive') || (EXCLUSIVE_DRIVERS as readonly string[]).includes(route)) {
+        return 'confirmed-exclusive';
+    }
+    // ao_alsa ignores --audio-exclusive; only naming a raw hw: PCM is direct.
+    if (route === 'alsa' && (audioDevice?.startsWith('alsa/hw:') ?? false)) {
+        return 'direct';
+    }
+    if ((EXCLUSIVE_CAPABLE_DRIVERS as readonly string[]).includes(route)) {
+        return 'exclusive-capable';
+    }
+    return 'shared';
 }
 
 export function evaluateIntegrity(observation: IntegrityObservation): IntegrityVerdict {
@@ -58,6 +91,7 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
         return { detail, missingEvidence: ['source', 'decoder'], status: 'unknown' };
     }
     const source = observation.declaredSource;
+    const routeKind = classifyRoute(observation.route, observation.audioDevice);
 
     if (observation.serverRoute === 'transcoded') {
         return { detail, missingEvidence, status: 'transcoded' };
@@ -82,7 +116,7 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
         return {
             detail,
             missingEvidence,
-            status: isExclusiveRoute(observation.route) ? 'exclusive-processed' : 'processed',
+            status: routeKind === 'confirmed-exclusive' ? 'exclusive-processed' : 'processed',
         };
     }
 
@@ -105,11 +139,10 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
     }
 
     if (processing.length > 0 || resample !== null) {
-        const exclusiveActive = isExclusiveRoute(observation.route);
         return {
             detail,
             missingEvidence,
-            status: exclusiveActive ? 'exclusive-processed' : 'processed',
+            status: routeKind === 'confirmed-exclusive' ? 'exclusive-processed' : 'processed',
         };
     }
 
@@ -117,22 +150,28 @@ export function evaluateIntegrity(observation: IntegrityObservation): IntegrityV
         return { detail, missingEvidence, status: 'unknown' };
     }
 
-    if (!isExclusiveRoute(observation.route)) {
+    const pendingConfirmation = collectPendingConfirmation(observation);
+    if (routeKind !== 'confirmed-exclusive') {
+        // A capable route under a requested exclusive policy, or a route the
+        // device names as raw hardware access, stays pending instead of
+        // reading as plain shared output.
+        if (
+            routeKind === 'direct' ||
+            (routeKind === 'exclusive-capable' && observation.requestedExclusive)
+        ) {
+            return {
+                detail,
+                missingEvidence: [...new Set(['route', ...pendingConfirmation])],
+                status: 'bit-perfect-eligible',
+            };
+        }
         return { detail, missingEvidence, status: 'unprocessed-shared' };
     }
 
-    const pendingConfirmation = collectPendingConfirmation(observation);
     if (pendingConfirmation.length > 0) {
         return { detail, missingEvidence: pendingConfirmation, status: 'bit-perfect-eligible' };
     }
     return { detail, missingEvidence, status: 'bit-perfect-verified' };
-}
-
-export function isExclusiveRoute(route: string): boolean {
-    if (route === 'alsa-hw') {
-        return true;
-    }
-    return route.endsWith('-exclusive') || (EXCLUSIVE_DRIVERS as readonly string[]).includes(route);
 }
 
 function collectPendingConfirmation(observation: IntegrityObservation): string[] {

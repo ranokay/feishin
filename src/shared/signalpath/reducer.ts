@@ -322,10 +322,12 @@ export function buildSignalPathModel(inputs: SignalPathInputs): SignalPathModel 
 
     const integrity = evaluateIntegrity({
         activeUserFilters: snapshot.activeFilters ?? [],
+        audioDevice: snapshot.audioDevice,
         declaredSource: source,
         decodedParams: snapshot.decodedParams,
         filterEvidenceLevel: snapshot.activeFilters === null ? 'unknown' : 'confirmed',
         outputParams: snapshot.outputParams,
+        requestedExclusive,
         requestedSourceDecode: isSourceDecodeActive(sourceDecode),
         route: snapshot.aoDriver ?? '',
         routeEvidenceLevel: snapshot.aoDriver === null ? 'unknown' : 'confirmed',

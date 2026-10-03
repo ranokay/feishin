@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { SourceDeclaration } from '../src/shared/signalpath/formats';
 
 import {
+    classifyRoute,
     compareFormats,
     evaluateIntegrity,
     evidence,
@@ -10,6 +11,7 @@ import {
     isDepthPreserved,
     isPrecisionPreserving,
     resolvePolicy,
+    type RouteKind,
 } from '../src/shared/signalpath';
 
 const cleanSource: SourceDeclaration = {
@@ -61,6 +63,29 @@ describe('format precision', () => {
     it('reports incomparable for unknown formats', () => {
         expect(compareFormats('fltp', 's16')).toBe('incomparable');
         expect(isPrecisionPreserving('mystery', 's32')).toBe(false);
+    });
+});
+
+describe('route classification', () => {
+    it.each([
+        ['coreaudio', null, 'shared'],
+        ['coreaudio_exclusive', null, 'confirmed-exclusive'],
+        ['avfoundation', null, 'shared'],
+        ['wasapi', null, 'exclusive-capable'],
+        ['pipewire', null, 'exclusive-capable'],
+        ['pulse', null, 'shared'],
+        ['alsa', null, 'shared'],
+        ['alsa', 'alsa/default', 'shared'],
+        ['alsa', 'alsa/hw:CARD=Audio,DEV=0', 'direct'],
+    ] as Array<[string, null | string, RouteKind]>)(
+        'classifies %s on device %s as %s',
+        (route, device, expected) => {
+            expect(classifyRoute(route, device)).toBe(expected);
+        },
+    );
+
+    it('does not treat an unknown route as exclusive', () => {
+        expect(classifyRoute('')).toBe('shared');
     });
 });
 
@@ -186,6 +211,119 @@ describe('evaluateIntegrity', () => {
             baseObservation({ route: 'avfoundation', routeEvidenceLevel: 'confirmed' }),
         );
         expect(verdict.status).toBe('unprocessed-shared');
+    });
+
+    it('keeps a requested exclusive-capable route eligible instead of shared', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({ requestedExclusive: true, route: 'wasapi' }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toContain('route');
+    });
+
+    it('keeps other pending evidence when a capable route is eligible', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                requestedExclusive: true,
+                route: 'wasapi',
+                serverRoute: 'unverified',
+                serverRouteEvidenceLevel: 'inferred',
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toEqual(expect.arrayContaining(['route', 'server-route']));
+    });
+
+    it('reports each missing evidence fact once', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                requestedExclusive: true,
+                route: 'wasapi',
+                routeEvidenceLevel: 'inferred',
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toEqual(['route']);
+    });
+
+    it('keeps pipewire pending while exclusivity is requested and unconfirmed', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({ requestedExclusive: true, route: 'pipewire' }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toContain('route');
+    });
+
+    it('keeps exclusive-capable routes shared when exclusivity was not requested', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({ requestedExclusive: false, route: 'wasapi' }),
+        );
+        expect(verdict.status).toBe('unprocessed-shared');
+    });
+
+    it('keeps non-capable shared routes shared even when exclusivity was requested', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({ requestedExclusive: true, route: 'avfoundation' }),
+        );
+        expect(verdict.status).toBe('unprocessed-shared');
+    });
+
+    it('treats alsa on a raw hw device as direct but not confirmed exclusive', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                audioDevice: 'alsa/hw:CARD=Audio,DEV=0',
+                requestedExclusive: true,
+                route: 'alsa',
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toContain('route');
+    });
+
+    it('keeps alsa on a non-hw device shared', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                audioDevice: 'alsa/default',
+                requestedExclusive: true,
+                route: 'alsa',
+            }),
+        );
+        expect(verdict.status).toBe('unprocessed-shared');
+    });
+
+    it('does not confirm a direct alsa route even without an exclusive request', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                audioDevice: 'alsa/hw:CARD=Audio,DEV=0',
+                requestedExclusive: false,
+                route: 'alsa',
+            }),
+        );
+        expect(verdict.status).toBe('bit-perfect-eligible');
+        expect(verdict.missingEvidence).toContain('route');
+    });
+
+    it('does not label processing on an unconfirmed route as exclusive-processed', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                activeUserFilters: ['lavfi'],
+                requestedExclusive: true,
+                route: 'wasapi',
+            }),
+        );
+        expect(verdict.status).toBe('processed');
+    });
+
+    it('does not label processing on a direct alsa hw route as exclusive-processed', () => {
+        const verdict = evaluateIntegrity(
+            baseObservation({
+                activeUserFilters: ['lavfi'],
+                audioDevice: 'alsa/hw:CARD=Audio,DEV=0',
+                requestedExclusive: true,
+                route: 'alsa',
+            }),
+        );
+        expect(verdict.status).toBe('processed');
     });
 
     it('reports transcoded regardless of everything else', () => {

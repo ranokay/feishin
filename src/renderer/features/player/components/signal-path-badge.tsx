@@ -24,10 +24,10 @@ import { Text } from '/@/shared/components/text/text';
 import {
     type AutoDevicePolicyReason,
     buildSignalPathModel,
+    classifyRoute,
     type ConfidenceLevel,
     declareSource,
     type IntegrityStatus,
-    isExclusiveRoute,
     normalizeMpvDeviceId,
     type PlaybackPolicy,
     type ProcessingEntry,
@@ -209,7 +209,7 @@ export const SignalPathBadge = () => {
     const verdict = VERDICT_META[model.integrity.status];
     const exclusiveRequestedUnconfirmed =
         model.requestedExclusive &&
-        !(model.output.value !== null && isExclusiveRoute(model.output.value));
+        classifyRoute(model.output.value ?? '', model.device.value) !== 'confirmed-exclusive';
 
     const openInspector = () => {
         openModal({

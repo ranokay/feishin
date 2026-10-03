@@ -1,6 +1,7 @@
 export * from './device-capabilities';
 export * from './device-profiles';
 export * from './diagnostics';
+export * from './engine-config';
 export * from './engine-errors';
 export * from './event-log';
 export * from './evidence';
